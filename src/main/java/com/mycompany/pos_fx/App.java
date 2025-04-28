@@ -28,7 +28,7 @@ public class App extends Application {
         root.setBottom(footer);
 
         Scene scene = new Scene(root, 800, 600);
-        scene.setFill(Color.TRANSPARENT);
+        scene.setFill(Color.WHITE);
         scene.getStylesheets().add(getClass().getResource("/login.css").toExternalForm());
 
         configureStage(stage, scene);
@@ -71,7 +71,6 @@ public class App extends Application {
     }
 
     private void setupLoginHandler(Stage stage, VBox mainContent, LoginView loginView, BorderPane root, HBox header) {
-        Scene loginScene = stage.getScene();
         loginView.setOnLoginSuccess(() -> {
             Runnable logoutCallback = () -> {
                 Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
@@ -84,22 +83,42 @@ public class App extends Application {
                 alert.showAndWait().ifPresent(type -> {
                     if (type == yesBtn) {
                         loginView.clearFields();
-                        mainContent.getChildren().setAll(loginView);
-                        stage.setScene(loginScene);
+                        stage.getScene().setRoot(root);
+                        Scene currentScene = stage.getScene();
+                        if (currentScene != null) {
+                            currentScene.getStylesheets().clear();
+                            currentScene.getStylesheets().add(getClass().getResource("/login.css").toExternalForm());
+                        }
                         stage.setTitle("Dream Fashion Shop - POS");
                         stage.setMaximized(false);
                     }
                 });
             };
             POSView posView = new POSView(logoutCallback);
-            Scene posScene = new Scene(posView);
-            posScene.getStylesheets().add(getClass().getResource("/style.css").toExternalForm());
-            stage.setScene(posScene);
+            posView.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+            posView.setPrefSize(Region.USE_COMPUTED_SIZE, Region.USE_COMPUTED_SIZE);
+
+            StackPane posRoot = new StackPane(posView);
+            posRoot.setStyle("-fx-background-color: #fff;");
+            StackPane.setAlignment(posView, Pos.CENTER);
+            posRoot.setPrefSize(Region.USE_COMPUTED_SIZE, Region.USE_COMPUTED_SIZE);
+            posRoot.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+
+            stage.getScene().setRoot(posRoot);
+            Scene currentScene = stage.getScene();
+            if (currentScene != null) {
+                currentScene.getStylesheets().clear();
+                currentScene.getStylesheets().add(getClass().getResource("/style.css").toExternalForm());
+                currentScene.setFill(Color.WHITE);
+            }
+
             stage.setTitle("Dream Fashion Shop - POS System");
             stage.setResizable(true);
             stage.setMinWidth(1200);
             stage.setMinHeight(700);
-            stage.setMaximized(true);
+            if (!stage.isMaximized()) {
+                stage.setMaximized(true);
+            }
         });
     }
     

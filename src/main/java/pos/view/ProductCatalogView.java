@@ -134,10 +134,23 @@ public class ProductCatalogView extends VBox {
             card.setMaxWidth(cardWidth);
             card.setMinWidth(cardWidth);
             ImageView img = new ImageView();
+            // Use a placeholder image while loading
+            Image placeholder = new Image(getClass().getResourceAsStream("/img/placeholder.jpg"));
+            img.setImage(placeholder);
             try {
-                img.setImage(new Image(getClass().getResourceAsStream(p.getImagePath())));
+                Image realImage = new Image(getClass().getResource(p.getImagePath()).toExternalForm(), true);
+                // Use background loading
+                if (realImage.getProgress() < 1.0) {
+                    realImage.progressProperty().addListener((obs, oldVal, newVal) -> {
+                        if (newVal.doubleValue() == 1.0) {
+                            img.setImage(realImage);
+                        }
+                    });
+                } else {
+                    img.setImage(realImage);
+                }
             } catch (Exception e) {
-                img.setImage(null);
+                img.setImage(placeholder);
             }
             img.setFitWidth(cardWidth - 40);
             img.setFitHeight(80);

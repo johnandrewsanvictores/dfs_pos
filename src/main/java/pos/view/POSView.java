@@ -49,6 +49,7 @@ public class POSView extends BorderPane {
     public POSView(Runnable onLogout) {
         this.onLogout = onLogout;
         setPadding(new Insets(10));
+        setStyle("-fx-background-color: #fff;");
         setTop(buildHeader());
         // Use an HBox for the main content area
         HBox mainContent = new HBox(10);
