@@ -45,9 +45,11 @@ public class POSView extends BorderPane {
     private final Label dateLabel = new Label();
     private final Label timeLabel = new Label();
     private final Runnable onLogout;
+    private final String cashierName;
 
-    public POSView(Runnable onLogout) {
+    public POSView(Runnable onLogout, String cashierName) {
         this.onLogout = onLogout;
+        this.cashierName = cashierName;
         setPadding(new Insets(10));
         setStyle("-fx-background-color: #fff;");
         setTop(buildHeader());
@@ -102,7 +104,7 @@ public class POSView extends BorderPane {
         logo.setFitHeight(70);
         Label title = new Label("Point-of-Sale System");
         title.getStyleClass().add("pos-title");
-        Label cashier = new Label("Cashier: John Andrew San Victores");
+        Label cashier = new Label("Cashier: " + cashierName);
         cashier.setFont(new Font(16));
         cashier.setStyle("-fx-text-fill: #333; -fx-padding: 0 20 0 40;");
         Button logoutBtn = new Button("Log Out");

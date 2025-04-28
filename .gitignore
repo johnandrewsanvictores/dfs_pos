@@ -33,3 +33,6 @@ Thumbs.db
 
 # VS Code settings (if any)
 .vscode/
+
+# Ignore sensitive DB credentials
+src/main/java/pos/db/DBCredentials.java

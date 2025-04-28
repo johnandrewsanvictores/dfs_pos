@@ -11,6 +11,7 @@ import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import pos.view.LoginView;
 import pos.view.POSView;
+import pos.db.CashierDAO;
 
 public class App extends Application {
 
@@ -71,7 +72,7 @@ public class App extends Application {
     }
 
     private void setupLoginHandler(Stage stage, VBox mainContent, LoginView loginView, BorderPane root, HBox header) {
-        loginView.setOnLoginSuccess(() -> {
+        loginView.setOnLoginSuccess((cashierName, username) -> {
             Runnable logoutCallback = () -> {
                 Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
                 alert.setTitle("Confirm Logout");
@@ -94,7 +95,11 @@ public class App extends Application {
                     }
                 });
             };
-            POSView posView = new POSView(logoutCallback);
+            // Update last_login in DB (background thread)
+            new Thread(() -> {
+                try { CashierDAO.updateLastLogin(username); } catch (Exception ignored) {}
+            }).start();
+            POSView posView = new POSView(logoutCallback, cashierName);
             posView.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
             posView.setPrefSize(Region.USE_COMPUTED_SIZE, Region.USE_COMPUTED_SIZE);
 
