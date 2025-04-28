@@ -1,0 +1,115 @@
+/* Root and Window Styling */
+.root-container {
+  -fx-background-color: #3e3e3e; /* --dark-bg */
+  -fx-background-radius: 8px;
+  -fx-border-color: #df0e8e; /* --primary */
+  -fx-border-width: 1px;
+  -fx-border-radius: 8px;
+  -fx-effect: dropshadow(three-pass-box, rgba(0, 0, 0, 0.8), 15, 0, 0, 0);
+}
+
+/* Header Styling */
+.header {
+  -fx-background-color: linear-gradient(
+    to right,
+    #df0e8e,
+    #b87333
+  ); /* --primary to --secondary */
+  -fx-padding: 12px 15px;
+  -fx-alignment: center;
+  -fx-border-radius: 8px 8px 0 0;
+}
+
+.title {
+  -fx-text-fill: #f2f2f2; /* --font-white */
+  -fx-font-size: 20px;
+  -fx-font-weight: bold;
+  -fx-font-family: "Segoe UI", Arial, sans-serif;
+  -fx-letter-spacing: 1.5px;
+}
+
+.window-btn {
+  -fx-background-color: transparent;
+  -fx-text-fill: #f2f2f2;
+  -fx-cursor: hand;
+  -fx-padding: 0 5px;
+}
+
+.window-btn:hover {
+  -fx-background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Main Content Styling */
+.main-content {
+  -fx-background-color: #fafafa; /* --white-bg */
+  -fx-padding: 40px;
+}
+
+.accent-line {
+  -fx-stroke: #df0e8e; /* --primary */
+  -fx-stroke-width: 3px;
+}
+
+.login-title {
+  -fx-text-fill: #555555; /* --font-dark */
+  -fx-font-size: 24px;
+  -fx-font-weight: bold;
+  -fx-font-family: "Segoe UI", Arial, sans-serif;
+}
+
+/* Input Fields */
+.input-field {
+  -fx-background-color: transparent;
+  -fx-border-color: #b87333; /* --secondary */
+  -fx-border-width: 0 0 2px 0;
+  -fx-padding: 8px 5px;
+  -fx-font-size: 14px;
+  -fx-text-fill: #555555; /* --font-dark */
+  -fx-prompt-text-fill: #999999;
+  -fx-min-width: 250px;
+}
+
+.input-field:focused {
+  -fx-border-color: #df0e8e; /* --primary */
+}
+
+.input-icon {
+  -fx-icon-color: #b87333; /* --secondary */
+  -fx-icon-size: 20px;
+}
+
+/* Login Button */
+.login-btn {
+  -fx-background-color: linear-gradient(
+    to right,
+    #df0e8e,
+    #b87333
+  ); /* --primary to --secondary */
+  -fx-text-fill: #f2f2f2; /* --font-white */
+  -fx-font-size: 14px;
+  -fx-font-weight: bold;
+  -fx-background-radius: 30px;
+  -fx-padding: 12px 0;
+  -fx-cursor: hand;
+  -fx-min-width: 260px;
+  -fx-effect: dropshadow(gaussian, rgba(223, 14, 142, 0.4), 10, 0, 0, 3);
+}
+
+.login-btn:hover {
+  -fx-background-color: linear-gradient(to right, #c50e7f, #a0662d);
+  -fx-effect: dropshadow(gaussian, rgba(223, 14, 142, 0.6), 12, 0, 0, 5);
+}
+
+.login-btn:pressed {
+  -fx-translate-y: 1px;
+  -fx-effect: dropshadow(gaussian, rgba(223, 14, 142, 0.2), 5, 0, 0, 1);
+}
+
+/* Footer Styling */
+.footer {
+  -fx-text-fill: #f2f2f2; /* --font-white */
+  -fx-font-size: 11px;
+  -fx-padding: 10px;
+  -fx-alignment: center;
+  -fx-background-color: #555555; /* --font-dark */
+}
