@@ -90,7 +90,8 @@ public class PaymentSectionView extends VBox {
         Button payBtn = new Button("Complete Payment");
         payBtn.setStyle("-fx-background-color: #219150; -fx-text-fill: white; -fx-font-size: 15px; -fx-background-radius: 5;");
         payBtn.setPrefWidth(220);
-        payBtn.setOnAction(e -> {
+        // Move payment logic to a method for reuse
+        Runnable handlePayment = () -> {
             double total = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
             String amtStr = amountField.getText();
             errorLabel.setText("");
@@ -144,7 +145,9 @@ public class PaymentSectionView extends VBox {
             } catch (NumberFormatException ex) {
                 errorLabel.setText("Invalid amount.");
             }
-        });
+        };
+        payBtn.setOnAction(e -> handlePayment.run());
+        amountField.setOnAction(e -> handlePayment.run());
         VBox.setMargin(paymentMethod, new Insets(0, 0, 10, 0));
         VBox.setMargin(amountField, new Insets(0, 0, 15, 0));
         VBox.setMargin(payBtn, new Insets(0, 0, 10, 0));

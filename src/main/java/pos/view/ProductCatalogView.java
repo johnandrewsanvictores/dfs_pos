@@ -28,6 +28,7 @@ public class ProductCatalogView extends VBox {
     private ProgressIndicator catalogLoader;
     private double lastCatalogWidth = 800;
     private final ObservableList<CartItem> cart;
+    private final TextField searchField;
 
     public ProductCatalogView(Product[] products, ObservableList<CartItem> cart) {
         this.cart = cart;
@@ -41,7 +42,7 @@ public class ProductCatalogView extends VBox {
         ImageView searchIcon = new ImageView(getClass().getResource("/img/search.png").toExternalForm());
         searchIcon.setFitWidth(22);
         searchIcon.setFitHeight(22);
-        TextField searchField = new TextField();
+        searchField = new TextField();
         searchField.setPromptText("Search products...");
         searchField.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(searchField, Priority.ALWAYS);
@@ -106,6 +107,53 @@ public class ProductCatalogView extends VBox {
         VBox.setVgrow(scrollPane, Priority.ALWAYS);
         getChildren().addAll(catalogLabel, searchBox, scrollPane, paginationBox);
         setSpacing(0);
+
+        // --- Keyboard and focus enhancements ---
+        // Auto-focus search field when shown
+        sceneProperty().addListener((obs, oldScene, newScene) -> {
+            if (newScene != null) {
+                newScene.windowProperty().addListener((o, ow, nw) -> {
+                    if (nw != null) {
+                        nw.setOnShown(e -> searchField.requestFocus());
+                    }
+                });
+                // F1 shortcut to focus search field
+                newScene.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, ke -> {
+                    if (ke.getCode() == javafx.scene.input.KeyCode.F1) {
+                        searchField.requestFocus();
+                        ke.consume();
+                    }
+                });
+            }
+        });
+        // Enter in search field: add first matching product to cart
+        searchField.setOnAction(e -> {
+            String search = searchField.getText().trim().toLowerCase();
+            Optional<Product> match = filteredProducts.stream()
+                .filter(p -> p.getName().toLowerCase().equals(search) && p.getQuantity() > 0)
+                .findFirst();
+            if (match.isPresent()) {
+                Product p = match.get();
+                CartItem found = cart.stream().filter(ci -> ci.getProduct().getName().equals(p.getName())).findFirst().orElse(null);
+                if (found != null) {
+                    found.setQuantity(found.getQuantity() + 1);
+                } else {
+                    cart.add(new CartItem(p, 1));
+                }
+                p.setQuantity(p.getQuantity() - 1);
+                Label qLabel = productQuantityLabels.get(p);
+                if (qLabel != null) {
+                    qLabel.setText("Available: " + p.getQuantity());
+                    if (p.getQuantity() == 0) {
+                        qLabel.setStyle("-fx-text-fill: #d32f2f;");
+                    } else if (p.getQuantity() <= 3) {
+                        qLabel.setStyle("-fx-text-fill: #fbc02d;");
+                    } else {
+                        qLabel.setStyle("-fx-text-fill: #388e3c;");
+                    }
+                }
+            }
+        });
     }
 
     private void updateProductGridResponsive(ObservableList<Product> products, double width) {
@@ -202,5 +250,9 @@ public class ProductCatalogView extends VBox {
 
     public Map<Product, Label> getProductQuantityLabels() {
         return productQuantityLabels;
+    }
+
+    public void focusSearchField() {
+        searchField.requestFocus();
     }
 } 

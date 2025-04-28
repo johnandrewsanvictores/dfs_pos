@@ -52,6 +52,13 @@ public class LoginView extends VBox {
         loader.setPrefSize(30, 30);
 
         loginBtn.setOnAction(e -> handleLogin());
+        // Allow Enter key to move from username to password, and authenticate from password
+        usernameField.setOnAction(e -> passwordField.requestFocus());
+        passwordField.setOnAction(e -> {
+            if (!usernameField.getText().trim().isEmpty()) {
+                handleLogin();
+            }
+        });
 
         loginForm.getChildren().addAll(accentLine, loginTitle, usernameBox, passwordBox, loginBtn, errorLabel, loader);
         getChildren().add(loginForm);

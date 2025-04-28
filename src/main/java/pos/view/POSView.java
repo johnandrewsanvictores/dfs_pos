@@ -71,6 +71,12 @@ public class POSView extends BorderPane {
             paymentSection.setPrefWidth(total * 0.2);
         });
         setCenter(mainContent);
+        // Focus search field as soon as scene is ready
+        sceneProperty().addListener((obs, oldScene, newScene) -> {
+            if (newScene != null) {
+                javafx.application.Platform.runLater(productCatalog::focusSearchField);
+            }
+        });
         sceneProperty().addListener((obs, oldScene, newScene) -> {
             if (newScene != null && newScene.getWindow() != null) {
                 newScene.getWindow().setOnShown(e -> {
