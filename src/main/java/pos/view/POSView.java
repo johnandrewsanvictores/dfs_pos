@@ -58,7 +58,7 @@ public class POSView extends BorderPane {
         HBox mainContent = new HBox(10);
         ProductCatalogView productCatalog = new ProductCatalogView(products, cart);
         CartView cartView = new CartView(cart, productCatalog.getProductQuantityLabels());
-        PaymentSectionView paymentSection = new PaymentSectionView(cart, products, () -> {});
+        PaymentSectionView paymentSection = new PaymentSectionView(cart, products, productCatalog::refreshAfterCheckout);
         mainContent.getChildren().addAll(productCatalog, cartView, paymentSection);
         // Set HGrow priorities
         HBox.setHgrow(productCatalog, Priority.ALWAYS);

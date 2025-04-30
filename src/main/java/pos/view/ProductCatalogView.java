@@ -63,7 +63,9 @@ public class ProductCatalogView extends VBox {
         productGrid.setHgap(10);
         productGrid.setVgap(10);
         productGrid.setPadding(new Insets(10));
-        filteredProducts = FXCollections.observableArrayList(products);
+        filteredProducts = FXCollections.observableArrayList(
+            Arrays.stream(products).filter(p -> p.getQuantity() > 0).collect(Collectors.toList())
+        );
         catalogLoader = new ProgressIndicator();
         catalogLoader.setMaxSize(60, 60);
         catalogLoader.setVisible(false);
@@ -94,7 +96,7 @@ public class ProductCatalogView extends VBox {
             searchDebounce.setOnFinished(e -> {
                 filteredProducts.setAll(
                     Arrays.stream(products)
-                        .filter(p -> p.getSku().toLowerCase().contains(val.toLowerCase()))
+                        .filter(p -> p.getSku().toLowerCase().contains(val.toLowerCase()) && p.getQuantity() > 0)
                         .collect(Collectors.toList())
                 );
                 currentPage = 1;
@@ -174,7 +176,8 @@ public class ProductCatalogView extends VBox {
         int minCardWidth = 180;
         int cols = Math.max(1, (int) (width / (minCardWidth + 10)));
         double cardWidth = (width - (cols - 1) * 20 - 55) / cols;
-        int totalProducts = products.size();
+        List<Product> displayProducts = products.stream().filter(p -> p.getQuantity() > 0).collect(Collectors.toList());
+        int totalProducts = displayProducts.size();
         int maxPage = Math.max(1, (int) Math.ceil((double) totalProducts / productsPerPage));
         if (currentPage > maxPage) currentPage = maxPage;
         int startIdx = (currentPage - 1) * productsPerPage;
@@ -183,8 +186,7 @@ public class ProductCatalogView extends VBox {
         prevPageBtn.setDisable(currentPage == 1);
         nextPageBtn.setDisable(currentPage == maxPage);
         for (int i = startIdx; i < endIdx; i++) {
-            Product p = products.get(i);
-            if (p.getQuantity() == 0) continue;
+            Product p = displayProducts.get(i);
             VBox card = new VBox(8);
             card.setPadding(new Insets(10));
             card.setAlignment(Pos.CENTER);
@@ -267,5 +269,16 @@ public class ProductCatalogView extends VBox {
 
     public void focusSearchField() {
         searchField.requestFocus();
+    }
+
+    // Add this method to allow hiding 0-quantity products after checkout
+    public void refreshAfterCheckout() {
+        filteredProducts.setAll(
+            filteredProducts.stream()
+                .filter(p -> p.getQuantity() > 0)
+                .collect(Collectors.toList())
+        );
+        currentPage = 1;
+        updateProductGridResponsive(filteredProducts, getWidth());
     }
 } 
