@@ -46,7 +46,16 @@ public class ProductCatalogView extends VBox {
         searchField.setPromptText("Search products...");
         searchField.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(searchField, Priority.ALWAYS);
-        searchBox.getChildren().addAll(searchIcon, searchField);
+        Label shortcutBadge = new Label("F1");
+        shortcutBadge.setStyle(
+            "-fx-background-color: #eee;" +
+            "-fx-padding: 2 8;" +
+            "-fx-border-radius: 4;" +
+            "-fx-border-color: #ccc;" +
+            "-fx-font-size: 10px;" +
+            "-fx-text-fill: #333;"
+        );
+        searchBox.getChildren().addAll(searchIcon, searchField, shortcutBadge);
         searchBox.setAlignment(Pos.CENTER_LEFT);
         searchBox.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(searchBox, Priority.ALWAYS);
@@ -85,7 +94,7 @@ public class ProductCatalogView extends VBox {
             searchDebounce.setOnFinished(e -> {
                 filteredProducts.setAll(
                     Arrays.stream(products)
-                        .filter(p -> p.getName().toLowerCase().contains(val.toLowerCase()))
+                        .filter(p -> p.getSku().toLowerCase().contains(val.toLowerCase()))
                         .collect(Collectors.toList())
                 );
                 currentPage = 1;
@@ -130,11 +139,11 @@ public class ProductCatalogView extends VBox {
         searchField.setOnAction(e -> {
             String search = searchField.getText().trim().toLowerCase();
             Optional<Product> match = filteredProducts.stream()
-                .filter(p -> p.getName().toLowerCase().equals(search) && p.getQuantity() > 0)
+                .filter(p -> p.getSku().toLowerCase().equals(search) && p.getQuantity() > 0)
                 .findFirst();
             if (match.isPresent()) {
                 Product p = match.get();
-                CartItem found = cart.stream().filter(ci -> ci.getProduct().getName().equals(p.getName())).findFirst().orElse(null);
+                CartItem found = cart.stream().filter(ci -> ci.getProduct().getSku().equals(p.getSku())).findFirst().orElse(null);
                 if (found != null) {
                     found.setQuantity(found.getQuantity() + 1);
                 } else {
@@ -152,6 +161,8 @@ public class ProductCatalogView extends VBox {
                         qLabel.setStyle("-fx-text-fill: #388e3c;");
                     }
                 }
+                // Clear the search field after adding to cart
+                searchField.clear();
             }
         });
     }
@@ -186,24 +197,26 @@ public class ProductCatalogView extends VBox {
             Image placeholder = new Image(getClass().getResourceAsStream("/img/placeholder.jpg"));
             img.setImage(placeholder);
             try {
-                Image realImage = new Image(getClass().getResource(p.getImagePath()).toExternalForm(), true);
-                // Use background loading
-                if (realImage.getProgress() < 1.0) {
-                    realImage.progressProperty().addListener((obs, oldVal, newVal) -> {
-                        if (newVal.doubleValue() == 1.0) {
-                            img.setImage(realImage);
-                        }
-                    });
+                Image realImage;
+                String imagePath = p.getImagePath();
+                if (imagePath != null && (imagePath.startsWith("http://") || imagePath.startsWith("https://"))) {
+                    realImage = new Image(imagePath, true);
+                } else if (imagePath != null && !imagePath.isEmpty()) {
+                    realImage = new Image(getClass().getResource(imagePath).toExternalForm(), true);
                 } else {
-                    img.setImage(realImage);
+                    realImage = placeholder;
                 }
-            } catch (Exception e) {
+                if (realImage.isError()) {
+                    realImage = placeholder;
+                }
+                img.setImage(realImage);
+            } catch (Exception ex) {
                 img.setImage(placeholder);
             }
             img.setFitWidth(cardWidth - 40);
             img.setFitHeight(80);
             img.setPreserveRatio(true);
-            Label name = new Label(p.getName());
+            Label name = new Label(p.getSku());
             name.setFont(new Font(14));
             name.setStyle("-fx-font-weight: bold;");
             Label price = new Label(String.format("₱%.2f", p.getPrice()));
@@ -222,7 +235,7 @@ public class ProductCatalogView extends VBox {
             addBtn.setStyle("-fx-background-color: #1976d2; -fx-text-fill: white; -fx-background-radius: 5;");
             addBtn.setOnAction(e -> {
                 if (p.getQuantity() > 0) {
-                    CartItem found = cart.stream().filter(ci -> ci.getProduct().getName().equals(p.getName())).findFirst().orElse(null);
+                    CartItem found = cart.stream().filter(ci -> ci.getProduct().getSku().equals(p.getSku())).findFirst().orElse(null);
                     if (found != null) {
                         found.setQuantity(found.getQuantity() + 1);
                     } else {

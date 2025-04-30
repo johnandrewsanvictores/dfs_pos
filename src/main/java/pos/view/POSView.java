@@ -8,6 +8,10 @@ import javafx.scene.layout.*;
 import javafx.scene.text.Font;
 import pos.model.CartItem;
 import pos.model.Product;
+import pos.db.ProductDAO;
+import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.List;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import javafx.animation.KeyFrame;
@@ -15,32 +19,7 @@ import javafx.animation.Timeline;
 import javafx.util.Duration;
 
 public class POSView extends BorderPane {
-    private final Product[] products = {
-        new Product("Apple", 1.00, "Fresh red apple", "/img/bag.jpg", 10),
-        new Product("Banana", 0.75, "Yellow ripe banana", "/img/bag.jpg", 8),
-        new Product("Bag", 25.00, "Leather handbag", "/img/bag.jpg", 5),
-        new Product("Orange", 1.20, "Fresh juicy orange", "/img/bag.jpg", 12),
-        new Product("Strawberry", 3.00, "Fresh strawberries", "/img/bag.jpg", 7),
-        new Product("Mango", 1.50, "Sweet mango", "/img/bag.jpg", 9),
-        new Product("Pineapple", 2.00, "Ripe pineapple", "/img/bag.jpg", 6),
-        new Product("Watermelon", 4.00, "Fresh watermelon", "/img/bag.jpg", 4),
-        new Product("Grapes", 2.50, "Seedless grapes", "/img/bag.jpg", 11),
-        new Product("Peach", 1.80, "Sweet and juicy peach", "/img/bag.jpg", 3),
-        new Product("Laptop", 500.00, "High-performance laptop", "/img/bag.jpg", 2),
-        new Product("Phone", 300.00, "Latest smartphone", "/img/bag.jpg", 15),
-        new Product("Headphones", 80.00, "Noise-cancelling headphones", "/img/bag.jpg", 13),
-        new Product("Charger", 25.00, "Fast charging cable", "/img/bag.jpg", 14),
-        new Product("TV", 700.00, "Smart TV", "/img/bag.jpg", 1),
-        new Product("Refrigerator", 400.00, "Energy-efficient refrigerator", "/img/bag.jpg", 7),
-        new Product("Washing Machine", 350.00, "Front-loading washing machine", "/img/bag.jpg", 8),
-        new Product("Microwave", 100.00, "Compact microwave oven", "/img/bag.jpg", 6),
-        new Product("Toaster", 40.00, "Electric toaster", "/img/bag.jpg", 5),
-        new Product("Fan", 30.00, "Oscillating fan", "/img/bag.jpg", 10),
-        new Product("Chair", 50.00, "Comfortable office chair", "/img/bag.jpg", 9),
-        new Product("Table", 120.00, "Wooden dining table", "/img/bag.jpg", 12),
-        new Product("Lamp", 25.00, "LED desk lamp", "/img/bag.jpg", 11)
-    };
-
+    private final Product[] products;
     private final ObservableList<CartItem> cart = FXCollections.observableArrayList();
     private final Label dateLabel = new Label();
     private final Label timeLabel = new Label();
@@ -53,6 +32,28 @@ public class POSView extends BorderPane {
         setPadding(new Insets(10));
         setStyle("-fx-background-color: #fff;");
         setTop(buildHeader());
+
+        // Load products from database
+        List<Product> productList = new ArrayList<>();
+        try (ResultSet rs = ProductDAO.getAllActiveProducts()) {
+            while (rs.next()) {
+                String sku = rs.getString("sku");
+                double price = rs.getDouble("unit_price");
+                String description = rs.getString("description");
+                String imagePath = rs.getString("image_path");
+                System.out.println(imagePath);
+                if (imagePath != null && !imagePath.isEmpty()) {
+                    imagePath = "http://localhost/dream_fashion_shop/assets/uploads/product_img/" + imagePath;
+                    System.out.println(imagePath);
+                }
+                int quantity = rs.getInt("quantity");
+                productList.add(new Product(sku, price, description, imagePath, quantity));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        products = productList.toArray(new Product[0]);
+
         // Use an HBox for the main content area
         HBox mainContent = new HBox(10);
         ProductCatalogView productCatalog = new ProductCatalogView(products, cart);

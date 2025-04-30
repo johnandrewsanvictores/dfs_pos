@@ -14,8 +14,6 @@ public class CartView extends VBox {
     private final TableView<CartItem> cartTable;
     private final ObservableList<CartItem> cart;
     private final Map<Product, Label> productQuantityLabels;
-    private Label subtotalSummary;
-    private Label totalSummary;
 
     public CartView(ObservableList<CartItem> cart, Map<Product, Label> productQuantityLabels) {
         this.cart = cart;
@@ -53,7 +51,7 @@ public class CartView extends VBox {
 
     private TableColumn<CartItem, String> createNameColumn() {
         TableColumn<CartItem, String> nameCol = new TableColumn<>("Product");
-        nameCol.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().getProduct().getName()));
+        nameCol.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().getProduct().getSku()));
         nameCol.setPrefWidth(110);
         return nameCol;
     }

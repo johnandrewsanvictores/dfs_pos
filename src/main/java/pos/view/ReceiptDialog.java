@@ -49,7 +49,7 @@ public class ReceiptDialog {
         VBox itemsBox = new VBox(2);
         itemsBox.setPadding(new Insets(5,0,5,0));
         for (CartItem item : cartSnapshot) {
-            String line = String.format("%s x%d  PHP %.2f", item.getProduct().getName(), item.getQuantity(), item.getSubtotal());
+            String line = String.format("%s x%d  PHP %.2f", item.getProduct().getSku(), item.getQuantity(), item.getSubtotal());
             Label l = new Label(line);
             l.setFont(new Font(13));
             itemsBox.getChildren().add(l);
@@ -132,7 +132,7 @@ public class ReceiptDialog {
         y -= 14;
         content.setFont(PDType1Font.HELVETICA, 9);
         for (CartItem item : cartSnapshot) {
-            String line = String.format("%s x%d  PHP %.2f", item.getProduct().getName(), item.getQuantity(), item.getSubtotal());
+            String line = String.format("%s x%d  PHP %.2f", item.getProduct().getSku(), item.getQuantity(), item.getSubtotal());
             content.beginText();
             content.newLineAtOffset(left, y);
             content.showText(line);
