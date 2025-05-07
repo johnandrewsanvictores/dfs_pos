@@ -40,18 +40,25 @@ public class ReceiptDialog {
     }
 
     private static void generateAndPrintJasperReceipt(
-        ObservableList<CartItem> cartSnapshot, double paid, double total, String paymentType, double change, String customerName, String customerPhone
+        ObservableList<CartItem> cartSnapshot, double paid, double totalInput, String paymentType, double change, String customerName, String customerPhone
     ) throws Exception {
+        // Calculate values
+        double subtotal = cartSnapshot.stream().mapToDouble(CartItem::getSubtotal).sum();
+        double discount = 0.0;
+        double tax = 0.0;
+        double total = subtotal - discount + tax;
+
         // Prepare parameters
         java.util.Map<String, Object> params = new java.util.HashMap<>();
         params.put("StoreName", "Dream Fashion Shop");
         params.put("StoreAddress", "123 Main St, City, Country");
         params.put("StorePhone", "123-456-7890");
-        params.put("ReceiptNumber", String.valueOf(System.currentTimeMillis())); // or your receipt number logic
+        params.put("ReceiptNumber", "49"); // Hardcoded for demo; replace with dynamic logic
         params.put("DateTime", java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
         params.put("Cashier", "John Andrew San Victores"); // or get from session
-        params.put("Subtotal", total);
-        params.put("Tax", 0.0); // or your tax logic
+        params.put("Subtotal", subtotal);
+        params.put("Discount", discount);
+        params.put("Tax", tax);
         params.put("Total", total);
         params.put("Paid", paid);
         params.put("Change", change);

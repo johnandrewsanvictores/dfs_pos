@@ -17,43 +17,61 @@
     <field name="UnitPrice" class="java.lang.Double"/>
     <field name="TotalPrice" class="java.lang.Double"/>
     <title>
-        <band height="90">
+        <band height="135">
             <staticText>
                 <reportElement x="0" y="0" width="260" height="22"/>
                 <textElement textAlignment="Center" verticalAlignment="Middle">
                     <font size="16" isBold="true"/>
                 </textElement>
-                <text><![CDATA[Dream Fashion Shop]]></text>
+                <text><![CDATA[DREAMS FASHION SHOP]]></text>
             </staticText>
             <staticText>
-                <reportElement x="0" y="22" width="260" height="15"/>
-                <textElement textAlignment="Center"/>
-                <text><![CDATA[Lucena, City]]></text>
+                <reportElement x="0" y="28" width="260" height="15"/>
+                <textElement textAlignment="Center">
+                    <font size="11"/>
+                </textElement>
+                <text><![CDATA[ANDREA A. MARASIGAN - Prop.]]></text>
             </staticText>
             <staticText>
-                <reportElement x="0" y="37" width="260" height="13"/>
-                <textElement textAlignment="Center"/>
-                <text><![CDATA[Tel: 09167003378]]></text>
+                <reportElement x="0" y="48" width="260" height="13"/>
+                <textElement textAlignment="Center">
+                    <font size="9"/>
+                </textElement>
+                <text><![CDATA[Dinglasan Building Quezon Avenue Brgy. 1 (Pob.) 4301]]></text>
+            </staticText>
+            <staticText>
+                <reportElement x="0" y="63" width="260" height="13"/>
+                <textElement textAlignment="Center">
+                    <font size="9"/>
+                </textElement>
+                <text><![CDATA[Lucena City (CAPITAL) Quezon Philippines]]></text>
+            </staticText>
+            <staticText>
+                <reportElement x="0" y="78" width="260" height="13"/>
+                <textElement textAlignment="Center">
+                    <font size="9"/>
+                </textElement>
+                <text><![CDATA[Non-VAT Reg.TIN No. 484-537-143-00000]]></text>
             </staticText>
             <line>
-                <reportElement x="0" y="52" width="260" height="1"/>
+                <reportElement x="0" y="95" width="260" height="1"/>
             </line>
             <staticText>
-                <reportElement x="0" y="55" width="260" height="20"/>
+                <reportElement x="0" y="100" width="260" height="18"/>
                 <textElement textAlignment="Center">
-                    <font size="15" isBold="true"/>
+                    <font size="14" isBold="true"/>
                 </textElement>
                 <text><![CDATA[INVOICE]]></text>
             </staticText>
         </band>
     </title>
     <pageHeader>
-        <band height="45">
-            <staticText>
+        <band height="50">
+            <textField>
                 <reportElement x="0" y="0" width="130" height="15"/>
-                <textElement/>
-                <text><![CDATA[Invoice #: INV-0001]]></text>
-            </staticText>
+                <textElement textAlignment="Left"/>
+                <textFieldExpression><![CDATA["Sales invoice: " + String.format("%07d", Integer.parseInt($P{ReceiptNumber}))]]></textFieldExpression>
+            </textField>
             <textField>
                 <reportElement x="130" y="0" width="130" height="15"/>
                 <textElement textAlignment="Right"/>
@@ -61,23 +79,16 @@
             </textField>
             <textField>
                 <reportElement x="0" y="15" width="260" height="15"/>
-                <textElement/>
+                <textElement textAlignment="Left"/>
                 <textFieldExpression><![CDATA["Cashier: " + $P{Cashier}]]></textFieldExpression>
-            </textField>
-            <textField>
-                <reportElement x="130" y="15" width="130" height="15"/>
-                <textElement textAlignment="Right"/>
-                <textFieldExpression><![CDATA[$P{CustomerName}]]></textFieldExpression>
-            </textField>
-            <textField>
-                <reportElement x="130" y="30" width="130" height="15"/>
-                <textElement textAlignment="Right"/>
-                <textFieldExpression><![CDATA[$P{CustomerPhone}]]></textFieldExpression>
             </textField>
         </band>
     </pageHeader>
     <columnHeader>
-        <band height="22">
+        <band height="24">
+            <line>
+                <reportElement x="0" y="0" width="260" height="1"/>
+            </line>
             <staticText>
                 <reportElement x="0" y="0" width="100" height="20"/>
                 <textElement textAlignment="Left">
@@ -136,7 +147,7 @@
         </band>
     </detail>
     <columnFooter>
-        <band height="115">
+        <band height="120">
             <line>
                 <reportElement x="0" y="0" width="260" height="1"/>
             </line>
@@ -152,7 +163,7 @@
                 <textElement textAlignment="Right">
                     <font isBold="true"/>
                 </textElement>
-                <textFieldExpression><![CDATA[$P{Subtotal}]]></textFieldExpression>
+                <textFieldExpression><![CDATA["₱" + String.format("%.2f", $P{Subtotal})]]></textFieldExpression>
             </textField>
             <staticText>
                 <reportElement x="0" y="20" width="140" height="15"/>
@@ -166,35 +177,35 @@
                 <textElement textAlignment="Right">
                     <font isBold="true"/>
                 </textElement>
-                <textFieldExpression><![CDATA[$P{Discount} == null ? 0.0 : $P{Discount}]]></textFieldExpression>
+                <textFieldExpression><![CDATA["₱" + String.format("%.2f", $P{Discount} == null ? 0.0 : $P{Discount})]]></textFieldExpression>
             </textField>
             <staticText>
                 <reportElement x="0" y="35" width="140" height="15"/>
                 <textElement>
-                    <font isBold="true" size="12"/>
+                    <font isBold="true"/>
                 </textElement>
                 <text><![CDATA[Tax:]]></text>
             </staticText>
             <textField pattern="#,#00.00">
                 <reportElement x="140" y="35" width="120" height="15"/>
                 <textElement textAlignment="Right">
-                    <font isBold="true" size="12"/>
+                    <font isBold="true"/>
                 </textElement>
-                <textFieldExpression><![CDATA[$P{Tax}]]></textFieldExpression>
+                <textFieldExpression><![CDATA["₱" + String.format("%.2f", $P{Tax})]]></textFieldExpression>
             </textField>
             <staticText>
                 <reportElement x="0" y="50" width="140" height="15"/>
                 <textElement>
-                    <font isBold="true" size="12"/>
+                    <font isBold="true"/>
                 </textElement>
                 <text><![CDATA[Total:]]></text>
             </staticText>
             <textField pattern="#,#00.00">
                 <reportElement x="140" y="50" width="120" height="15"/>
                 <textElement textAlignment="Right">
-                    <font isBold="true" size="12"/>
+                    <font isBold="true"/>
                 </textElement>
-                <textFieldExpression><![CDATA[$P{Total}]]></textFieldExpression>
+                <textFieldExpression><![CDATA["₱" + String.format("%.2f", $P{Total})]]></textFieldExpression>
             </textField>
             <staticText>
                 <reportElement x="0" y="65" width="140" height="15"/>
@@ -208,7 +219,7 @@
                 <textElement textAlignment="Right">
                     <font isBold="true"/>
                 </textElement>
-                <textFieldExpression><![CDATA[$P{Paid}]]></textFieldExpression>
+                <textFieldExpression><![CDATA["₱" + String.format("%.2f", $P{Paid})]]></textFieldExpression>
             </textField>
             <staticText>
                 <reportElement x="0" y="80" width="140" height="15"/>
@@ -236,19 +247,19 @@
                 <textElement textAlignment="Right">
                     <font isBold="true"/>
                 </textElement>
-                <textFieldExpression><![CDATA[$P{Change}]]></textFieldExpression>
+                <textFieldExpression><![CDATA["₱" + String.format("%.2f", $P{Change})]]></textFieldExpression>
             </textField>
         </band>
     </columnFooter>
     <summary>
-        <band height="40">
+        <band height="50">
             <staticText>
-                <reportElement x="0" y="0" width="260" height="20"/>
+                <reportElement x="0" y="10" width="260" height="20"/>
                 <textElement textAlignment="Center"/>
                 <text><![CDATA[Thank you for shopping!]]></text>
             </staticText>
             <staticText>
-                <reportElement x="0" y="20" width="260" height="15"/>
+                <reportElement x="0" y="30" width="260" height="15"/>
                 <textElement textAlignment="Center"/>
                 <text><![CDATA[Powered by Dream Fashion POS System]]></text>
             </staticText>
