@@ -30,7 +30,7 @@ public class PaymentSectionView extends VBox {
         VBox.setMargin(paymentLabel, new Insets(0, 0, 10, 0));
         Label paymentMethodLabel = new Label("Payment Method:");
         ComboBox<String> paymentMethod = new ComboBox<>();
-        paymentMethod.getItems().addAll("Cash", "Credit Card");
+        paymentMethod.getItems().setAll("Cash", "E-Wallet");
         paymentMethod.setValue("Cash");
         Label amountPaidLabel = new Label("Amount Paid");
         TextField amountField = new TextField();
@@ -44,7 +44,7 @@ public class PaymentSectionView extends VBox {
         summaryBox.getStyleClass().add("section");
         Label subtotalSummary = new Label();
         subtotalSummary.getStyleClass().add("payment-summary");
-        Label discountSummary = new Label("Discount: 0%");
+        Label discountSummary = new Label("Discount: ₱0.00");
         Label totalSummary = new Label();
         totalSummary.getStyleClass().add("payment-summary");
         Label changeSummary = new Label();
@@ -66,19 +66,11 @@ public class PaymentSectionView extends VBox {
             }
             try {
                 double paid = Double.parseDouble(amtStr);
-                if (paymentMethod.getValue().equals("Cash")) {
-                    if (paid < total) {
-                        changeLabel.setText("Change: ₱0.00");
-                    } else {
-                        double change = paid - total;
-                        changeLabel.setText("Change: ₱" + String.format("%.2f", change));
-                    }
+                if (paid < total) {
+                    changeLabel.setText("Change: ₱0.00");
                 } else {
-                    if (paid < total) {
-                        changeLabel.setText("Change: ₱0.00");
-                    } else {
-                        changeLabel.setText("Payment successful (Credit Card). Change: ₱0.00");
-                    }
+                    double change = paid - total;
+                    changeLabel.setText("Change: ₱" + String.format("%.2f", change));
                 }
             } catch (NumberFormatException ex) {
                 changeLabel.setText("");

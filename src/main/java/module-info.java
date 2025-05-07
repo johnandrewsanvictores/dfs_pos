@@ -8,4 +8,5 @@ module com.mycompany.pos_fx {
     requires java.sql;
     requires mysql.connector.j;
     requires transitive jbcrypt;
+    requires jasperreports;
 }
