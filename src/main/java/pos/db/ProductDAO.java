@@ -42,12 +42,9 @@ public class ProductDAO {
                      "d.quantity, " +
                      "NULL AS online_product_id, " +
                      "NULL AS image_path " +
-                     "FROM " +
-                     "inventory i " +
+                     "FROM inventory i " +
                      "JOIN in_store_product_details d ON i.id = d.inventory_product_id " +
-                     "WHERE " +
-                     "i.product_status = 'active' " +
-                     "AND i.sale_channel = 'in-store' " +
+                     "WHERE i.product_status = 'active' AND (i.sale_channel = 'in-store' OR i.sale_channel = 'both') " +
                      "UNION ALL " +
                      "SELECT " +
                      "i.id AS inventory_id, " +
@@ -58,14 +55,78 @@ public class ProductDAO {
                      "opv.quantity, " +
                      "opv.online_product_id, " +
                      "opv.image_path " +
-                     "FROM " +
-                     "inventory i " +
+                     "FROM inventory i " +
                      "JOIN online_product_details opd ON i.id = opd.product_id " +
                      "JOIN online_product_variant opv ON opd.id = opv.online_product_id " +
-                     "WHERE " +
-                     "i.product_status = 'active' " +
-                     "AND i.sale_channel = 'both';";
+                     "WHERE i.product_status = 'active' AND i.sale_channel = 'both'";
         PreparedStatement stmt = conn.prepareStatement(sql);
         return stmt.executeQuery();
+    }
+
+    // Get inventory_id and sale_channel by SKU
+    public static InventoryInfo getInventoryInfoBySku(String sku) throws SQLException {
+        Connection conn = DBConnection.getConnection();
+        String sql = "SELECT i.id AS inventory_id, i.sale_channel FROM inventory i " +
+                     "JOIN in_store_product_details d ON i.id = d.inventory_product_id WHERE d.sku = ? " +
+                     "UNION ALL " +
+                     "SELECT i.id AS inventory_id, i.sale_channel FROM inventory i " +
+                     "JOIN online_product_details opd ON i.id = opd.product_id " +
+                     "JOIN online_product_variant opv ON opd.id = opv.online_product_id WHERE opv.sku = ? ";
+        PreparedStatement stmt = conn.prepareStatement(sql);
+        stmt.setString(1, sku);
+        stmt.setString(2, sku);
+        ResultSet rs = stmt.executeQuery();
+        InventoryInfo info = null;
+        if (rs.next()) {
+            info = new InventoryInfo(rs.getInt("inventory_id"), rs.getString("sale_channel"));
+        }
+        rs.close();
+        stmt.close();
+        conn.close();
+        return info;
+    }
+
+    public static class InventoryInfo {
+        public final int inventoryId;
+        public final String saleChannel;
+        public InventoryInfo(int inventoryId, String saleChannel) {
+            this.inventoryId = inventoryId;
+            this.saleChannel = saleChannel;
+        }
+    }
+
+    public static class InventoryItemInfo {
+        public final int inventoryItemId; // This is in_store_product_details.id or online_product_variant.id
+        public final String saleChannel;
+        public InventoryItemInfo(int inventoryItemId, String saleChannel) {
+            this.inventoryItemId = inventoryItemId;
+            this.saleChannel = saleChannel;
+        }
+    }
+
+    public static InventoryItemInfo getInventoryItemInfoBySku(String sku) throws SQLException {
+        Connection conn = DBConnection.getConnection();
+        String sql = "SELECT d.id AS inventory_item_id, i.sale_channel " +
+                     "FROM inventory i " +
+                     "JOIN in_store_product_details d ON i.id = d.inventory_product_id " +
+                     "WHERE d.sku = ? " +
+                     "UNION ALL " +
+                     "SELECT opv.id AS inventory_item_id, i.sale_channel " +
+                     "FROM inventory i " +
+                     "JOIN online_product_details opd ON i.id = opd.product_id " +
+                     "JOIN online_product_variant opv ON opd.id = opv.online_product_id " +
+                     "WHERE opv.sku = ? ";
+        PreparedStatement stmt = conn.prepareStatement(sql);
+        stmt.setString(1, sku);
+        stmt.setString(2, sku);
+        ResultSet rs = stmt.executeQuery();
+        InventoryItemInfo info = null;
+        if (rs.next()) {
+            info = new InventoryItemInfo(rs.getInt("inventory_item_id"), rs.getString("sale_channel"));
+        }
+        rs.close();
+        stmt.close();
+        conn.close();
+        return info;
     }
 } 

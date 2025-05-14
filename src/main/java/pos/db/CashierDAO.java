@@ -24,4 +24,19 @@ public class CashierDAO {
         stmt.close();
         conn.close();
     }
+    public static int getStaffIdByUsername(String username) throws SQLException {
+        Connection conn = DBConnection.getConnection();
+        String sql = "SELECT id FROM staff_acc WHERE username = ?";
+        PreparedStatement stmt = conn.prepareStatement(sql);
+        stmt.setString(1, username);
+        ResultSet rs = stmt.executeQuery();
+        int staffId = -1;
+        if (rs.next()) {
+            staffId = rs.getInt("id");
+        }
+        rs.close();
+        stmt.close();
+        conn.close();
+        return staffId;
+    }
 } 

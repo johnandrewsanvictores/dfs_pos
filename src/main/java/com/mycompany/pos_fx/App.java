@@ -99,7 +99,13 @@ public class App extends Application {
             new Thread(() -> {
                 try { CashierDAO.updateLastLogin(username); } catch (Exception ignored) {}
             }).start();
-            POSView posView = new POSView(logoutCallback, cashierName);
+            int staffId = -1;
+            try {
+                staffId = CashierDAO.getStaffIdByUsername(username);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            POSView posView = new POSView(logoutCallback, cashierName, staffId);
             posView.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
             posView.setPrefSize(Region.USE_COMPUTED_SIZE, Region.USE_COMPUTED_SIZE);
 

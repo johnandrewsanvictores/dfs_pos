@@ -19,9 +19,21 @@ import javafx.scene.Scene;
 import javafx.scene.text.TextAlignment;
 import java.io.File;
 import java.io.IOException;
+import pos.db.PosTransactionDAO;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import pos.db.ProductDAO;
 
 public class PaymentSectionView extends VBox {
-    public PaymentSectionView(ObservableList<CartItem> cart, Product[] products, Runnable onPaymentCompleted) {
+    private final int staffId;
+    private final String cashierName;
+
+    public PaymentSectionView(ObservableList<CartItem> cart, Product[] products, Runnable onPaymentCompleted, int staffId, String cashierName) {
+        this.staffId = staffId;
+        this.cashierName = cashierName;
         setPadding(new Insets(10));
         setPrefWidth(300);
         getStyleClass().add("card");
@@ -93,11 +105,13 @@ public class PaymentSectionView extends VBox {
             }
             try {
                 double paid = Double.parseDouble(amtStr);
+                double subtotal = total;
+                double discount = 0.0;
+                double tax = 0.0;
                 if (paymentMethod.getValue().equals("Cash")) {
                     if (paid < total) {
                         errorLabel.setText("Insufficient cash.");
                     } else {
-                        // Show confirmation dialog
                         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
                         confirm.setTitle("Confirm Payment");
                         confirm.setHeaderText(null);
@@ -105,11 +119,59 @@ public class PaymentSectionView extends VBox {
                         confirm.initModality(Modality.APPLICATION_MODAL);
                         confirm.showAndWait().ifPresent(type -> {
                             if (type == ButtonType.OK) {
-                                ReceiptDialog.show(cart, paid, total, paymentMethod.getValue(), paid - total, () -> {});
-                                onPaymentCompleted.run();
-                                cart.clear();
-                                amountField.clear();
-                                changeLabel.setText("");
+                                try {
+                                    String receiptNumber = PosTransactionDAO.generateNextInvoiceNo();
+                                    int posTransactionId = PosTransactionDAO.insertPosTransaction(
+                                        receiptNumber,
+                                        new Timestamp(System.currentTimeMillis()),
+                                        paymentMethod.getValue(),
+                                        staffId,
+                                        subtotal,
+                                        discount,
+                                        tax,
+                                        total,
+                                        paid
+                                    );
+                                    // Prepare items for physical_sale_items
+                                    List<Map<String, Object>> items = new ArrayList<>();
+                                    for (CartItem item : cart) {
+                                        Map<String, Object> row = new HashMap<>();
+                                        row.put("sku", item.getProduct().getSku());
+                                        row.put("order_quantity", item.getQuantity());
+                                        row.put("stock_quantity", item.getProduct().getQuantity());
+                                        row.put("subtotal", item.getSubtotal());
+                                        Integer onlineInventoryItemId = null;
+                                        Integer inStoreInventoryItemId = null;
+                                        String saleChannel = "in-store";
+                                        try {
+                                            ProductDAO.InventoryItemInfo info = ProductDAO.getInventoryItemInfoBySku(item.getProduct().getSku());
+                                            if (info != null) {
+                                                saleChannel = info.saleChannel;
+                                                if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
+                                                    onlineInventoryItemId = info.inventoryItemId;
+                                                } else {
+                                                    inStoreInventoryItemId = info.inventoryItemId;
+                                                }
+                                            }
+                                        } catch (Exception e) {
+                                            e.printStackTrace();
+                                        }
+                                        row.put("sale_channel", saleChannel);
+                                        row.put("online_inventory_item_id", onlineInventoryItemId);
+                                        row.put("in_store_inventory_item_id", inStoreInventoryItemId);
+                                        items.add(row);
+                                    }
+                                    PosTransactionDAO.insertPhysicalSaleItems(posTransactionId, items);
+                                    ReceiptDialog.show(cart, paid, total, paymentMethod.getValue(), paid - total, () -> {
+                                        onPaymentCompleted.run();
+                                        cart.clear();
+                                        amountField.clear();
+                                        changeLabel.setText("");
+                                    }, cashierName, receiptNumber);
+                                } catch (Exception ex) {
+                                    ex.printStackTrace();
+                                    errorLabel.setText("Error processing transaction.");
+                                }
                             }
                         });
                     }
@@ -117,7 +179,6 @@ public class PaymentSectionView extends VBox {
                     if (paid < total) {
                         errorLabel.setText("Insufficient amount.");
                     } else {
-                        // Show confirmation dialog
                         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
                         confirm.setTitle("Confirm Payment");
                         confirm.setHeaderText(null);
@@ -125,11 +186,29 @@ public class PaymentSectionView extends VBox {
                         confirm.initModality(Modality.APPLICATION_MODAL);
                         confirm.showAndWait().ifPresent(type -> {
                             if (type == ButtonType.OK) {
-                                ReceiptDialog.show(cart, paid, total, paymentMethod.getValue(), paid - total, () -> {});
-                                onPaymentCompleted.run();
-                                cart.clear();
-                                amountField.clear();
-                                changeLabel.setText("");
+                                try {
+                                    String receiptNumber = PosTransactionDAO.generateNextInvoiceNo();
+                                    PosTransactionDAO.insertPosTransaction(
+                                        receiptNumber,
+                                        new Timestamp(System.currentTimeMillis()),
+                                        paymentMethod.getValue(),
+                                        staffId,
+                                        subtotal,
+                                        discount,
+                                        tax,
+                                        total,
+                                        paid
+                                    );
+                                    ReceiptDialog.show(cart, paid, total, paymentMethod.getValue(), paid - total, () -> {
+                                        onPaymentCompleted.run();
+                                        cart.clear();
+                                        amountField.clear();
+                                        changeLabel.setText("");
+                                    }, cashierName, receiptNumber);
+                                } catch (Exception ex) {
+                                    ex.printStackTrace();
+                                    errorLabel.setText("Error processing transaction.");
+                                }
                             }
                         });
                     }

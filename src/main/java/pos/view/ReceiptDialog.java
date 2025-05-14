@@ -29,10 +29,9 @@ import net.sf.jasperreports.engine.JasperPrintManager;
 import javafx.application.Platform;
 
 public class ReceiptDialog {
-    public static void show(ObservableList<CartItem> cartSnapshot, double paid, double total, String paymentType, double change, Runnable afterPrint) {
+    public static void show(ObservableList<CartItem> cartSnapshot, double paid, double total, String paymentType, double change, Runnable afterPrint, String cashierName, String receiptNumber) {
         try {
-            // Pass empty strings for customerName and customerPhone for now
-            generateAndPrintJasperReceipt(cartSnapshot, paid, total, paymentType, change, "", "");
+            generateAndPrintJasperReceipt(cartSnapshot, paid, total, paymentType, change, "", "", cashierName, receiptNumber);
         } catch (Exception ex) {
             ex.printStackTrace();
         }
@@ -40,7 +39,7 @@ public class ReceiptDialog {
     }
 
     private static void generateAndPrintJasperReceipt(
-        ObservableList<CartItem> cartSnapshot, double paid, double totalInput, String paymentType, double change, String customerName, String customerPhone
+        ObservableList<CartItem> cartSnapshot, double paid, double totalInput, String paymentType, double change, String customerName, String customerPhone, String cashierName, String receiptNumber
     ) throws Exception {
         // Calculate values
         double subtotal = cartSnapshot.stream().mapToDouble(CartItem::getSubtotal).sum();
@@ -53,9 +52,12 @@ public class ReceiptDialog {
         params.put("StoreName", "Dream Fashion Shop");
         params.put("StoreAddress", "123 Main St, City, Country");
         params.put("StorePhone", "123-456-7890");
-        params.put("ReceiptNumber", "49"); // Hardcoded for demo; replace with dynamic logic
+        // Extract integer from zero-padded receipt number
+        String receiptNumOnly = receiptNumber.replaceFirst("^0+", "");
+        if (receiptNumOnly.isEmpty()) receiptNumOnly = "0";
+        params.put("ReceiptNumber", receiptNumOnly); // only the number part
         params.put("DateTime", java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-        params.put("Cashier", "John Andrew San Victores"); // or get from session
+        params.put("Cashier", cashierName);
         params.put("Subtotal", subtotal);
         params.put("Discount", discount);
         params.put("Tax", tax);

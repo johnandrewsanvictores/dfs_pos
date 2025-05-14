@@ -25,10 +25,12 @@ public class POSView extends BorderPane {
     private final Label timeLabel = new Label();
     private final Runnable onLogout;
     private final String cashierName;
+    private final int staffId;
 
-    public POSView(Runnable onLogout, String cashierName) {
+    public POSView(Runnable onLogout, String cashierName, int staffId) {
         this.onLogout = onLogout;
         this.cashierName = cashierName;
+        this.staffId = staffId;
         setPadding(new Insets(10));
         setStyle("-fx-background-color: #fff;");
         setTop(buildHeader());
@@ -41,10 +43,8 @@ public class POSView extends BorderPane {
                 double price = rs.getDouble("unit_price");
                 String description = rs.getString("description");
                 String imagePath = rs.getString("image_path");
-                System.out.println(imagePath);
                 if (imagePath != null && !imagePath.isEmpty()) {
                     imagePath = "http://localhost/dream_fashion_shop/assets/uploads/product_img/" + imagePath;
-                    System.out.println(imagePath);
                 }
                 int quantity = rs.getInt("quantity");
                 productList.add(new Product(sku, price, description, imagePath, quantity));
@@ -52,13 +52,14 @@ public class POSView extends BorderPane {
         } catch (Exception e) {
             e.printStackTrace();
         }
+
         products = productList.toArray(new Product[0]);
 
         // Use an HBox for the main content area
         HBox mainContent = new HBox(10);
         ProductCatalogView productCatalog = new ProductCatalogView(products, cart);
         CartView cartView = new CartView(cart, productCatalog.getProductQuantityLabels());
-        PaymentSectionView paymentSection = new PaymentSectionView(cart, products, productCatalog::refreshAfterCheckout);
+        PaymentSectionView paymentSection = new PaymentSectionView(cart, products, productCatalog::refreshAfterCheckout, staffId, cashierName);
         mainContent.getChildren().addAll(productCatalog, cartView, paymentSection);
         // Set HGrow priorities
         HBox.setHgrow(productCatalog, Priority.ALWAYS);
