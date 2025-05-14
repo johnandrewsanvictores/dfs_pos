@@ -162,6 +162,33 @@ public class PaymentSectionView extends VBox {
                                         items.add(row);
                                     }
                                     PosTransactionDAO.insertPhysicalSaleItems(posTransactionId, items);
+                                    // Decrease product quantities in the database efficiently using batch update
+                                    Map<String, Integer> inStoreMap = new java.util.HashMap<>();
+                                    Map<String, Integer> onlineMap = new java.util.HashMap<>();
+                                    for (CartItem item : cart) {
+                                        String sku = item.getProduct().getSku();
+                                        int qty = item.getQuantity();
+                                        String saleChannel = "in-store";
+                                        try {
+                                            ProductDAO.InventoryInfo info = ProductDAO.getInventoryInfoBySku(sku);
+                                            if (info != null) {
+                                                saleChannel = info.saleChannel;
+                                            }
+                                        } catch (Exception e) {
+                                            e.printStackTrace();
+                                        }
+                                        if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
+                                            onlineMap.put(sku, qty);
+                                        } else {
+                                            inStoreMap.put(sku, qty);
+                                        }
+                                    }
+                                    try {
+                                        if (!inStoreMap.isEmpty()) ProductDAO.decreaseProductQuantitiesBatch(inStoreMap, "in-store");
+                                        if (!onlineMap.isEmpty()) ProductDAO.decreaseProductQuantitiesBatch(onlineMap, "both");
+                                    } catch (Exception e) {
+                                        e.printStackTrace();
+                                    }
                                     ReceiptDialog.show(cart, paid, total, paymentMethod.getValue(), paid - total, () -> {
                                         onPaymentCompleted.run();
                                         cart.clear();
@@ -199,6 +226,33 @@ public class PaymentSectionView extends VBox {
                                         total,
                                         paid
                                     );
+                                    // Decrease product quantities in the database efficiently using batch update
+                                    Map<String, Integer> inStoreMap2 = new java.util.HashMap<>();
+                                    Map<String, Integer> onlineMap2 = new java.util.HashMap<>();
+                                    for (CartItem item : cart) {
+                                        String sku = item.getProduct().getSku();
+                                        int qty = item.getQuantity();
+                                        String saleChannel = "in-store";
+                                        try {
+                                            ProductDAO.InventoryInfo info = ProductDAO.getInventoryInfoBySku(sku);
+                                            if (info != null) {
+                                                saleChannel = info.saleChannel;
+                                            }
+                                        } catch (Exception e) {
+                                            e.printStackTrace();
+                                        }
+                                        if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
+                                            onlineMap2.put(sku, qty);
+                                        } else {
+                                            inStoreMap2.put(sku, qty);
+                                        }
+                                    }
+                                    try {
+                                        if (!inStoreMap2.isEmpty()) ProductDAO.decreaseProductQuantitiesBatch(inStoreMap2, "in-store");
+                                        if (!onlineMap2.isEmpty()) ProductDAO.decreaseProductQuantitiesBatch(onlineMap2, "both");
+                                    } catch (Exception e) {
+                                        e.printStackTrace();
+                                    }
                                     ReceiptDialog.show(cart, paid, total, paymentMethod.getValue(), paid - total, () -> {
                                         onPaymentCompleted.run();
                                         cart.clear();

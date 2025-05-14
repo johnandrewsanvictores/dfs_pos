@@ -4,6 +4,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Map;
 
 public class ProductDAO {
     // Fetch active in-store products for POS
@@ -128,5 +129,43 @@ public class ProductDAO {
         stmt.close();
         conn.close();
         return info;
+    }
+    /**
+     * Decrease the quantity of multiple products by SKU and sale channel in a batch using the IN keyword.
+     * @param skuToQty Map of SKU to quantity to decrease.
+     * @param saleChannel The sale channel ("in-store", "both", or "online").
+     * @throws SQLException if a database error occurs.
+     */
+    public static void decreaseProductQuantitiesBatch(Map<String, Integer> skuToQty, String saleChannel) throws SQLException {
+        if (skuToQty == null || skuToQty.isEmpty()) return;
+        Connection conn = DBConnection.getConnection();
+        String table;
+        if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
+            table = "online_product_variant";
+        } else {
+            table = "in_store_product_details";
+        }
+        // Build SQL: UPDATE ... SET quantity = CASE sku WHEN ... THEN ... END WHERE sku IN (...)
+        StringBuilder sql = new StringBuilder("UPDATE " + table + " SET quantity = quantity - CASE sku ");
+        for (String sku : skuToQty.keySet()) {
+            sql.append(" WHEN ? THEN ?");
+        }
+        sql.append(" END WHERE sku IN (");
+        sql.append(String.join(",", java.util.Collections.nCopies(skuToQty.size(), "?")));
+        sql.append(")");
+        try (PreparedStatement stmt = conn.prepareStatement(sql.toString())) {
+            int idx = 1;
+            // Set WHEN ? THEN ? pairs
+            for (Map.Entry<String, Integer> entry : skuToQty.entrySet()) {
+                stmt.setString(idx++, entry.getKey());
+                stmt.setInt(idx++, entry.getValue());
+            }
+            // Set IN (?) list
+            for (String sku : skuToQty.keySet()) {
+                stmt.setString(idx++, sku);
+            }
+            stmt.executeUpdate();
+        }
+        conn.close();
     }
 } 
