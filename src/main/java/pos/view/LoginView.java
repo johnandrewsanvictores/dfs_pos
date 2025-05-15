@@ -168,4 +168,8 @@ public class LoginView extends VBox {
         }
         return result.toString();
     }
+
+    public void hideLoader() {
+        loader.setVisible(false);
+    }
 } 

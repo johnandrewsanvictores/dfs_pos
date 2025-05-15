@@ -39,4 +39,15 @@ public class CashierDAO {
         conn.close();
         return staffId;
     }
+    public static void logActivity(int staffId, String activityType, String details) throws SQLException {
+        Connection conn = DBConnection.getConnection();
+        String sql = "INSERT INTO activity_log (staff_id, activity_type, details) VALUES (?, ?, ?)";
+        PreparedStatement stmt = conn.prepareStatement(sql);
+        stmt.setInt(1, staffId);
+        stmt.setString(2, activityType);
+        stmt.setString(3, details);
+        stmt.executeUpdate();
+        stmt.close();
+        conn.close();
+    }
 } 

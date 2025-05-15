@@ -17,15 +17,19 @@ import java.time.format.DateTimeFormatter;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.util.Duration;
+import javafx.concurrent.Task;
 
 public class POSView extends BorderPane {
-    private final Product[] products;
+    private Product[] products;
     private final ObservableList<CartItem> cart = FXCollections.observableArrayList();
     private final Label dateLabel = new Label();
     private final Label timeLabel = new Label();
     private final Runnable onLogout;
     private final String cashierName;
     private final int staffId;
+    private final StackPane skeletonOverlay = new StackPane();
+    private final VBox skeletonBox = new VBox();
+    private HBox mainContent;
 
     public POSView(Runnable onLogout, String cashierName, int staffId) {
         this.onLogout = onLogout;
@@ -35,60 +39,61 @@ public class POSView extends BorderPane {
         setStyle("-fx-background-color: #fff;");
         setTop(buildHeader());
 
-        // Load products from database
-        List<Product> productList = new ArrayList<>();
-        try (ResultSet rs = ProductDAO.getAllActiveProducts()) {
-            while (rs.next()) {
-                String sku = rs.getString("sku");
-                double price = rs.getDouble("unit_price");
-                String description = rs.getString("description");
-                String imagePath = rs.getString("image_path");
-                if (imagePath != null && !imagePath.isEmpty()) {
-                    imagePath = "http://localhost/dream_fashion_shop/assets/uploads/product_img/" + imagePath;
-                }
-                int quantity = rs.getInt("quantity");
-                productList.add(new Product(sku, price, description, imagePath, quantity));
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        // --- Skeleton Loader ---
+        skeletonBox.setAlignment(Pos.CENTER);
+        skeletonBox.setSpacing(20);
+        Label skeletonLabel = new Label("Loading products...");
+        skeletonLabel.setStyle("-fx-font-size: 20px; -fx-text-fill: #888;");
+        ProgressIndicator skeletonLoader = new ProgressIndicator();
+        skeletonLoader.setPrefSize(60, 60);
+        skeletonBox.getChildren().addAll(skeletonLoader, skeletonLabel);
+        skeletonOverlay.getChildren().add(skeletonBox);
+        setCenter(skeletonOverlay);
 
-        products = productList.toArray(new Product[0]);
-
-        // Use an HBox for the main content area
-        HBox mainContent = new HBox(10);
-        ProductCatalogView productCatalog = new ProductCatalogView(products, cart);
-        CartView cartView = new CartView(cart, productCatalog.getProductQuantityLabels());
-        PaymentSectionView paymentSection = new PaymentSectionView(cart, products, productCatalog::refreshAfterCheckout, staffId, cashierName);
-        mainContent.getChildren().addAll(productCatalog, cartView, paymentSection);
-        // Set HGrow priorities
-        HBox.setHgrow(productCatalog, Priority.ALWAYS);
-        HBox.setHgrow(cartView, Priority.ALWAYS);
-        HBox.setHgrow(paymentSection, Priority.ALWAYS);
-        // Set preferred widths as percentages (will be relative to the HBox width)
-        mainContent.widthProperty().addListener((obs, oldVal, newVal) -> {
-            double total = newVal.doubleValue();
-            productCatalog.setPrefWidth(total * 0.5);
-            cartView.setPrefWidth(total * 0.3);
-            paymentSection.setPrefWidth(total * 0.2);
-        });
-        setCenter(mainContent);
-        // Focus search field as soon as scene is ready
-        sceneProperty().addListener((obs, oldScene, newScene) -> {
-            if (newScene != null) {
-                javafx.application.Platform.runLater(productCatalog::focusSearchField);
-            }
-        });
-        sceneProperty().addListener((obs, oldScene, newScene) -> {
-            if (newScene != null && newScene.getWindow() != null) {
-                newScene.getWindow().setOnShown(e -> {
-                    if (newScene.getWindow() instanceof javafx.stage.Stage) {
-                        javafx.stage.Stage stage = (javafx.stage.Stage) newScene.getWindow();
-                        stage.setMaximized(false); // Don't force maximize
+        // --- Load products in background ---
+        Task<List<Product>> loadProductsTask = new Task<>() {
+            @Override
+            protected List<Product> call() throws Exception {
+                List<Product> productList = new ArrayList<>();
+                try (ResultSet rs = ProductDAO.getAllActiveProducts()) {
+                    while (rs.next()) {
+                        String sku = rs.getString("sku");
+                        double price = rs.getDouble("unit_price");
+                        String description = rs.getString("description");
+                        String imagePath = rs.getString("image_path");
+                        if (imagePath != null && !imagePath.isEmpty()) {
+                            imagePath = "http://localhost/dream_fashion_shop/assets/uploads/product_img/" + imagePath;
+                        }
+                        int quantity = rs.getInt("quantity");
+                        productList.add(new Product(sku, price, description, imagePath, quantity));
                     }
-                });
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                return productList;
             }
+        };
+        loadProductsTask.setOnSucceeded(ev -> {
+            products = loadProductsTask.getValue().toArray(new Product[0]);
+            // Build main content
+            mainContent = new HBox(10);
+            ProductCatalogView productCatalog = new ProductCatalogView(products, cart);
+            CartView cartView = new CartView(cart, productCatalog.getProductQuantityLabels());
+            PaymentSectionView paymentSection = new PaymentSectionView(cart, products, productCatalog::refreshAfterCheckout, staffId, cashierName);
+            mainContent.getChildren().addAll(productCatalog, cartView, paymentSection);
+            HBox.setHgrow(productCatalog, Priority.ALWAYS);
+            HBox.setHgrow(cartView, Priority.ALWAYS);
+            HBox.setHgrow(paymentSection, Priority.ALWAYS);
+            mainContent.widthProperty().addListener((obs, oldVal, newVal) -> {
+                double total = newVal.doubleValue();
+                productCatalog.setPrefWidth(total * 0.5);
+                cartView.setPrefWidth(total * 0.3);
+                paymentSection.setPrefWidth(total * 0.2);
+            });
+            setCenter(mainContent);
         });
+        new Thread(loadProductsTask).start();
+
         dateLabel.setFont(new Font(24));
         dateLabel.setStyle("-fx-text-fill: #1976d2; -fx-font-weight: bold;");
         dateLabel.getStyleClass().add("date-time");

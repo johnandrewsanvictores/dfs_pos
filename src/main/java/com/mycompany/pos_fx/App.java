@@ -73,6 +73,13 @@ public class App extends Application {
 
     private void setupLoginHandler(Stage stage, VBox mainContent, LoginView loginView, BorderPane root, HBox header) {
         loginView.setOnLoginSuccess((cashierName, username) -> {
+            int staffId = -1;
+            try {
+                staffId = CashierDAO.getStaffIdByUsername(username);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            final int finalStaffId = staffId;
             Runnable logoutCallback = () -> {
                 Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
                 alert.setTitle("Confirm Logout");
@@ -83,6 +90,10 @@ public class App extends Application {
                 alert.getButtonTypes().setAll(yesBtn, noBtn);
                 alert.showAndWait().ifPresent(type -> {
                     if (type == yesBtn) {
+                        // Log logout activity
+                        new Thread(() -> {
+                            try { CashierDAO.logActivity(finalStaffId, "login_logout", username + " (cashier) logged out"); } catch (Exception ignored) {}
+                        }).start();
                         loginView.clearFields();
                         stage.getScene().setRoot(root);
                         Scene currentScene = stage.getScene();
@@ -97,14 +108,11 @@ public class App extends Application {
             };
             // Update last_login in DB (background thread)
             new Thread(() -> {
-                try { CashierDAO.updateLastLogin(username); } catch (Exception ignored) {}
+                try { 
+                    CashierDAO.updateLastLogin(username); 
+                    CashierDAO.logActivity(finalStaffId, "login_logout", username + " (cashier) logged in");
+                } catch (Exception ignored) {}
             }).start();
-            int staffId = -1;
-            try {
-                staffId = CashierDAO.getStaffIdByUsername(username);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
             POSView posView = new POSView(logoutCallback, cashierName, staffId);
             posView.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
             posView.setPrefSize(Region.USE_COMPUTED_SIZE, Region.USE_COMPUTED_SIZE);
