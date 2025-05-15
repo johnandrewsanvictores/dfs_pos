@@ -22,13 +22,14 @@ public class PosTransactionDAO {
         return String.format("%07d", next); // 7 digits, leading zeros
     }
 
-    // Insert a new POS transaction
+    // Insert a new POS transaction with payment_ref_no
     public static int insertPosTransaction(
         Connection conn,
         String invoiceNo, java.sql.Timestamp transactionDate, String paymentMethod, int staffId,
-        double subtotal, double discount, double tax, double totalAmount, double receivedAmount
+        double subtotal, double discount, double tax, double totalAmount, double receivedAmount,
+        String paymentRefNo
     ) throws SQLException {
-        String sql = "INSERT INTO pos_transactions (transaction_date, payment_method, staff_id, subtotal, discount, tax, total_amount, received_amount, invoice_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO pos_transactions (transaction_date, payment_method, staff_id, subtotal, discount, tax, total_amount, received_amount, invoice_no, payment_ref_no) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
         stmt.setTimestamp(1, transactionDate);
         stmt.setString(2, paymentMethod);
@@ -39,6 +40,7 @@ public class PosTransactionDAO {
         stmt.setDouble(7, totalAmount);
         stmt.setDouble(8, receivedAmount);
         stmt.setString(9, invoiceNo);
+        stmt.setString(10, paymentRefNo);
         int affectedRows = stmt.executeUpdate();
         int id = -1;
         if (affectedRows > 0) {

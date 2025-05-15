@@ -35,6 +35,9 @@ public class PaymentSectionView extends VBox {
     private final String cashierName;
     private final StackPane overlay = new StackPane();
     private final ProgressIndicator loader = new ProgressIndicator();
+    private final VBox paymentContent = new VBox();
+    private final TextField refNoField = new TextField();
+    private final VBox refNoBox = new VBox();
 
     public PaymentSectionView(ObservableList<CartItem> cart, Product[] products, Runnable onPaymentCompleted, int staffId, String cashierName) {
         this.staffId = staffId;
@@ -96,16 +99,51 @@ public class PaymentSectionView extends VBox {
         amountField.textProperty().addListener((obs, old, val) -> updateChange.run());
         paymentMethod.valueProperty().addListener((obs, old, val) -> updateChange.run());
         cart.addListener((ListChangeListener<CartItem>) c -> updateChange.run());
+        // Add listeners to each CartItem's quantityProperty to update change when quantity changes
+        for (CartItem item : cart) {
+            item.quantityProperty().addListener((obs, oldVal, newVal) -> updateChange.run());
+        }
+        cart.addListener((ListChangeListener<CartItem>) c -> {
+            while (c.next()) {
+                if (c.wasAdded()) {
+                    for (CartItem item : c.getAddedSubList()) {
+                        item.quantityProperty().addListener((obs, oldVal, newVal) -> updateChange.run());
+                    }
+                }
+            }
+        });
         Button payBtn = new Button("Complete Payment");
         payBtn.setStyle("-fx-background-color: #219150; -fx-text-fill: white; -fx-font-size: 15px; -fx-background-radius: 5;");
         payBtn.setPrefWidth(220);
-        // Move payment logic to a method for reuse
+        Label refNoLabel = new Label("Reference Number");
+        refNoField.setPromptText("Enter E-Wallet Reference Number");
+        refNoBox.getChildren().setAll(refNoLabel, refNoField);
+        refNoBox.setVisible(false);
+        refNoBox.setManaged(false);
+        // Show/hide reference number field based on payment method
+        paymentMethod.valueProperty().addListener((obs, old, val) -> {
+            boolean isEwallet = "E-Wallet".equals(val);
+            refNoBox.setVisible(isEwallet);
+            refNoBox.setManaged(isEwallet);
+            if (isEwallet && !paymentContent.getChildren().contains(refNoBox)) {
+                int idx = paymentContent.getChildren().indexOf(amountField) + 1;
+                paymentContent.getChildren().add(idx, refNoBox);
+            } else if (!isEwallet && paymentContent.getChildren().contains(refNoBox)) {
+                paymentContent.getChildren().remove(refNoBox);
+            }
+        });
         Runnable handlePayment = () -> {
             double total = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
             String amtStr = amountField.getText();
             errorLabel.setText("");
+            boolean isEwallet = "E-Wallet".equals(paymentMethod.getValue());
+            String refNo = isEwallet ? refNoField.getText().trim() : null;
             if (amtStr.isEmpty()) {
                 errorLabel.setText("Please enter amount paid.");
+                return;
+            }
+            if (isEwallet && refNo == null || refNo.isEmpty()) {
+                errorLabel.setText("Reference number is required for E-Wallet payments.");
                 return;
             }
             try {
@@ -113,6 +151,14 @@ public class PaymentSectionView extends VBox {
                 double subtotal = total;
                 double discount = 0.0;
                 double tax = 0.0;
+                if (cart.isEmpty()) {
+                    Platform.runLater(() -> {
+                        errorLabel.setText("Cart is empty. Please add items to the cart.");
+                        overlay.setVisible(false);
+                        payBtn.setDisable(false);
+                    });
+                    return;
+                }
                 if (paymentMethod.getValue().equals("Cash")) {
                     if (paid < total) {
                         errorLabel.setText("Insufficient cash.");
@@ -145,7 +191,8 @@ public class PaymentSectionView extends VBox {
                                         discount,
                                         tax,
                                         total,
-                                        paid
+                                        paid,
+                                        isEwallet ? refNo : null
                                     );
                                     t2 = System.currentTimeMillis();
                                     System.out.println("[Timing] Transaction insertion: " + (t2 - t1) + " ms");
@@ -219,6 +266,10 @@ public class PaymentSectionView extends VBox {
                                         cart.clear();
                                         amountField.clear();
                                         changeLabel.setText("");
+                                        paymentMethod.setValue("Cash");
+                                        refNoField.clear();
+                                        refNoBox.setVisible(false);
+                                        refNoBox.setManaged(false);
                                     }, cashierName, receiptNumber);
                                     t2 = System.currentTimeMillis();
                                     System.out.println("[Timing] Receipt generation: " + (t2 - t1) + " ms");
@@ -267,7 +318,8 @@ public class PaymentSectionView extends VBox {
                                         discount,
                                         tax,
                                         total,
-                                        paid
+                                        paid,
+                                        isEwallet ? refNo : null
                                     );
                                     t2 = System.currentTimeMillis();
                                     System.out.println("[Timing] Transaction insertion: " + (t2 - t1) + " ms");
@@ -341,6 +393,10 @@ public class PaymentSectionView extends VBox {
                                         cart.clear();
                                         amountField.clear();
                                         changeLabel.setText("");
+                                        paymentMethod.setValue("Cash");
+                                        refNoField.clear();
+                                        refNoBox.setVisible(false);
+                                        refNoBox.setManaged(false);
                                     }, cashierName, receiptNumber);
                                     t2 = System.currentTimeMillis();
                                     System.out.println("[Timing] Receipt generation: " + (t2 - t1) + " ms");
@@ -369,9 +425,8 @@ public class PaymentSectionView extends VBox {
         VBox.setMargin(payBtn, new Insets(0, 0, 10, 0));
         VBox.setMargin(errorLabel, new Insets(0, 0, 10, 0));
         // Create the main VBox for payment content
-        VBox paymentContent = new VBox();
         paymentContent.getChildren().addAll(paymentLabel, paymentMethodLabel, paymentMethod, amountPaidLabel, amountField, payBtn, errorLabel, summaryBox);
-        paymentContent.setSpacing(0);
+        paymentContent.setSpacing(10);
         // Style the loader and overlay
         loader.setMaxSize(80, 80);
         loader.setStyle("-fx-progress-color: #b48c5f;");
@@ -413,9 +468,19 @@ public class PaymentSectionView extends VBox {
                 double total = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
                 String amtStr = amountField.getText();
                 Platform.runLater(() -> errorLabel.setText(""));
+                boolean isEwallet = "E-Wallet".equals(paymentMethod.getValue());
+                String refNo = isEwallet ? refNoField.getText().trim() : null;
                 if (amtStr.isEmpty()) {
                     Platform.runLater(() -> {
                         errorLabel.setText("Please enter amount paid.");
+                        overlay.setVisible(false);
+                        payBtn.setDisable(false);
+                    });
+                    return null;
+                }
+                if (isEwallet && (refNo == null || refNo.isEmpty())) {
+                    Platform.runLater(() -> {
+                        errorLabel.setText("Reference number is required for E-Wallet payments.");
                         overlay.setVisible(false);
                         payBtn.setDisable(false);
                     });
@@ -426,6 +491,14 @@ public class PaymentSectionView extends VBox {
                     double subtotal = total;
                     double discount = 0.0;
                     double tax = 0.0;
+                    if (cart.isEmpty()) {
+                        Platform.runLater(() -> {
+                            errorLabel.setText("Cart is empty. Please add items to the cart.");
+                            overlay.setVisible(false);
+                            payBtn.setDisable(false);
+                        });
+                        return null;
+                    }
                     if (paymentMethod.getValue().equals("Cash")) {
                         if (paid < total) {
                             Platform.runLater(() -> {
@@ -491,7 +564,8 @@ public class PaymentSectionView extends VBox {
                             discount,
                             tax,
                             total,
-                            paid
+                            paid,
+                            isEwallet ? refNo : null
                         );
                         t2 = System.currentTimeMillis();
                         System.out.println("[Timing] Transaction insertion: " + (t2 - t1) + " ms");
@@ -566,6 +640,10 @@ public class PaymentSectionView extends VBox {
                                 cart.clear();
                                 amountField.clear();
                                 changeLabel.setText("");
+                                paymentMethod.setValue("Cash");
+                                refNoField.clear();
+                                refNoBox.setVisible(false);
+                                refNoBox.setManaged(false);
                             }, cashierName, receiptNumber);
                         });
                         t2 = System.currentTimeMillis();
