@@ -65,8 +65,7 @@ public class ProductDAO {
     }
 
     // Get inventory_id and sale_channel by SKU
-    public static InventoryInfo getInventoryInfoBySku(String sku) throws SQLException {
-        Connection conn = DBConnection.getConnection();
+    public static InventoryInfo getInventoryInfoBySku(Connection conn, String sku) throws SQLException {
         String sql = "SELECT i.id AS inventory_id, i.sale_channel FROM inventory i " +
                      "JOIN in_store_product_details d ON i.id = d.inventory_product_id WHERE d.sku = ? " +
                      "UNION ALL " +
@@ -83,7 +82,6 @@ public class ProductDAO {
         }
         rs.close();
         stmt.close();
-        conn.close();
         return info;
     }
 
@@ -105,8 +103,7 @@ public class ProductDAO {
         }
     }
 
-    public static InventoryItemInfo getInventoryItemInfoBySku(String sku) throws SQLException {
-        Connection conn = DBConnection.getConnection();
+    public static InventoryItemInfo getInventoryItemInfoBySku(Connection conn, String sku) throws SQLException {
         String sql = "SELECT d.id AS inventory_item_id, i.sale_channel " +
                      "FROM inventory i " +
                      "JOIN in_store_product_details d ON i.id = d.inventory_product_id " +
@@ -127,7 +124,6 @@ public class ProductDAO {
         }
         rs.close();
         stmt.close();
-        conn.close();
         return info;
     }
     /**
@@ -136,9 +132,8 @@ public class ProductDAO {
      * @param saleChannel The sale channel ("in-store", "both", or "online").
      * @throws SQLException if a database error occurs.
      */
-    public static void decreaseProductQuantitiesBatch(Map<String, Integer> skuToQty, String saleChannel) throws SQLException {
+    public static void decreaseProductQuantitiesBatch(Connection conn, Map<String, Integer> skuToQty, String saleChannel) throws SQLException {
         if (skuToQty == null || skuToQty.isEmpty()) return;
-        Connection conn = DBConnection.getConnection();
         String table;
         if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
             table = "online_product_variant";
@@ -166,6 +161,17 @@ public class ProductDAO {
             }
             stmt.executeUpdate();
         }
-        conn.close();
+    }
+
+    public static void batchUpdateInventory(Connection conn, Map<String, Integer> skuToQty, String saleChannel) throws SQLException {
+        int batchSize = 100;
+        java.util.List<Map.Entry<String, Integer>> entries = new java.util.ArrayList<>(skuToQty.entrySet());
+        for (int i = 0; i < entries.size(); i += batchSize) {
+            Map<String, Integer> batch = new java.util.HashMap<>();
+            for (int j = i; j < i + batchSize && j < entries.size(); j++) {
+                batch.put(entries.get(j).getKey(), entries.get(j).getValue());
+            }
+            decreaseProductQuantitiesBatch(conn, batch, saleChannel);
+        }
     }
 } 
