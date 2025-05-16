@@ -197,9 +197,10 @@ public class PaymentSectionView extends VBox {
                                     t2 = System.currentTimeMillis();
                                     System.out.println("[Timing] Transaction insertion: " + (t2 - t1) + " ms");
                                     t1 = t2;
+                                    String transactionId = PosTransactionDAO.generateNextTransactionId(conn);
                                     PosTransactionDAO.insertTransactionLog(
                                         conn,
-                                        receiptNumber,
+                                        transactionId,
                                         null,
                                         posTransactionId,
                                         null,
@@ -334,9 +335,10 @@ public class PaymentSectionView extends VBox {
                                     t2 = System.currentTimeMillis();
                                     System.out.println("[Timing] Transaction insertion: " + (t2 - t1) + " ms");
                                     t1 = t2;
+                                    String transactionId = PosTransactionDAO.generateNextTransactionId(conn);
                                     PosTransactionDAO.insertTransactionLog(
                                         conn,
-                                        receiptNumber,
+                                        transactionId,
                                         null,
                                         posTransactionId,
                                         null,
@@ -590,9 +592,10 @@ public class PaymentSectionView extends VBox {
                         t2 = System.currentTimeMillis();
                         System.out.println("[Timing] Transaction insertion: " + (t2 - t1) + " ms");
                         t1 = t2;
+                        String transactionId = PosTransactionDAO.generateNextTransactionId(conn);
                         PosTransactionDAO.insertTransactionLog(
                             conn,
-                            receiptNumber,
+                            transactionId,
                             null,
                             posTransactionId,
                             null,

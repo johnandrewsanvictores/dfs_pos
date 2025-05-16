@@ -108,4 +108,27 @@ public class PosTransactionDAO {
         stmt.executeUpdate();
         stmt.close();
     }
+
+    // Generate the next transaction_id in the format TRX-YYYYMMDD-00001
+    public static String generateNextTransactionId(Connection conn) throws SQLException {
+        String today = new java.text.SimpleDateFormat("yyyyMMdd").format(new java.util.Date());
+        String prefix = "TRX-" + today + "-";
+        String sql = "SELECT transaction_id FROM transaction_log WHERE transaction_id LIKE ? ORDER BY transaction_id DESC LIMIT 1";
+        PreparedStatement stmt = conn.prepareStatement(sql);
+        stmt.setString(1, prefix + "%");
+        ResultSet rs = stmt.executeQuery();
+        int nextSeq = 1;
+        if (rs.next()) {
+            String lastId = rs.getString("transaction_id");
+            String[] parts = lastId.split("-");
+            if (parts.length == 3) {
+                try {
+                    nextSeq = Integer.parseInt(parts[2]) + 1;
+                } catch (Exception ignored) {}
+            }
+        }
+        rs.close();
+        stmt.close();
+        return String.format("%s%05d", prefix, nextSeq);
+    }
 } 
