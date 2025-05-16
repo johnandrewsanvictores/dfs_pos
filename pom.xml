@@ -1,5 +1,7 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" 
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+                             http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.mycompany</groupId>
     <artifactId>POS_FX</artifactId>
@@ -13,7 +15,17 @@
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-controls</artifactId>
-            <version>13</version>
+            <version>21</version>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-graphics</artifactId>
+            <version>21</version>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-swing</artifactId>
+            <version>21</version>
         </dependency>
         <dependency>
             <groupId>org.kordamp.ikonli</groupId>
@@ -26,19 +38,9 @@
             <version>12.3.1</version>
         </dependency>
         <dependency>
-            <groupId>org.openjfx</groupId>
-            <artifactId>javafx-swing</artifactId>
-            <version>13</version>
-        </dependency>
-        <dependency>
-            <groupId>org.openjfx</groupId>
-            <artifactId>javafx-graphics</artifactId>
-            <version>13</version>
-        </dependency>
-        <dependency>
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
-            <version>2.0.24</version> <!-- or latest version -->
+            <version>2.0.24</version>
         </dependency>
         <dependency>
             <groupId>mysql</groupId>
@@ -60,6 +62,36 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.4.1</version>
+                <executions>
+                  <execution>
+                    <phase>package</phase>
+                    <goals>
+                      <goal>shade</goal>
+                    </goals>
+                    <configuration>
+                      <filters>
+                        <filter>
+                          <artifact>*:*</artifact>
+                          <excludes>
+                            <exclude>META-INF/*.SF</exclude>
+                            <exclude>META-INF/*.DSA</exclude>
+                            <exclude>META-INF/*.RSA</exclude>
+                          </excludes>
+                        </filter>
+                      </filters>
+                      <transformers>
+                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                          <mainClass>com.mycompany.pos_fx.App</mainClass> 
+                        </transformer>
+                      </transformers>
+                    </configuration>
+                  </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.8.0</version>
                 <configuration>
@@ -75,13 +107,9 @@
                 </configuration>
                 <executions>
                     <execution>
-                        <!-- Default configuration for running -->
-                        <!-- Usage: mvn clean javafx:run -->
                         <id>default-cli</id>
                     </execution>
                     <execution>
-                        <!-- Configuration for manual attach debugging -->
-                        <!-- Usage: mvn clean javafx:run@debug -->
                         <id>debug</id>
                         <configuration>
                             <options>
@@ -90,7 +118,6 @@
                         </configuration>
                     </execution>
                     <execution>
-                        <!-- Configuration for automatic IDE debugging -->
                         <id>ide-debug</id>
                         <configuration>
                             <options>
@@ -99,15 +126,14 @@
                         </configuration>
                     </execution>
                     <execution>
-                        <!-- Configuration for automatic IDE profiling -->
                         <id>ide-profile</id>
                         <configuration>
                             <options>
-				<option>${profiler.jvmargs.arg1}</option>
-				<option>${profiler.jvmargs.arg2}</option>
-				<option>${profiler.jvmargs.arg3}</option>
-				<option>${profiler.jvmargs.arg4}</option>
-				<option>${profiler.jvmargs.arg5}</option>
+                                <option>${profiler.jvmargs.arg1}</option>
+                                <option>${profiler.jvmargs.arg2}</option>
+                                <option>${profiler.jvmargs.arg3}</option>
+                                <option>${profiler.jvmargs.arg4}</option>
+                                <option>${profiler.jvmargs.arg5}</option>
                             </options>
                         </configuration>
                     </execution>

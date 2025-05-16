@@ -84,4 +84,28 @@ public class PosTransactionDAO {
         stmt.executeBatch(); // execute remaining
         stmt.close();
     }
+
+    // Insert a new record into transaction_log
+    public static void insertTransactionLog(
+        Connection conn,
+        String transactionId,
+        Integer onlineOrderId,
+        Integer posTransactionId,
+        Integer returnId,
+        String channel,
+        String type,
+        String status
+    ) throws SQLException {
+        String sql = "INSERT INTO transaction_log (transaction_id, online_order_id, pos_transaction_id, return_id, channel, type, status) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        PreparedStatement stmt = conn.prepareStatement(sql);
+        stmt.setString(1, transactionId);
+        if (onlineOrderId != null) stmt.setInt(2, onlineOrderId); else stmt.setNull(2, java.sql.Types.INTEGER);
+        if (posTransactionId != null) stmt.setInt(3, posTransactionId); else stmt.setNull(3, java.sql.Types.INTEGER);
+        if (returnId != null) stmt.setInt(4, returnId); else stmt.setNull(4, java.sql.Types.INTEGER);
+        stmt.setString(5, channel);
+        stmt.setString(6, type);
+        stmt.setString(7, status);
+        stmt.executeUpdate();
+        stmt.close();
+    }
 } 

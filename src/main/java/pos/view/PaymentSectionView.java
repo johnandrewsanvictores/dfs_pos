@@ -197,6 +197,16 @@ public class PaymentSectionView extends VBox {
                                     t2 = System.currentTimeMillis();
                                     System.out.println("[Timing] Transaction insertion: " + (t2 - t1) + " ms");
                                     t1 = t2;
+                                    PosTransactionDAO.insertTransactionLog(
+                                        conn,
+                                        receiptNumber,
+                                        null,
+                                        posTransactionId,
+                                        null,
+                                        "in-store",
+                                        "sale",
+                                        "completed"
+                                    );
                                     // Prepare items for physical_sale_items
                                     List<Map<String, Object>> items = new ArrayList<>();
                                     for (CartItem item : cart) {
@@ -324,6 +334,16 @@ public class PaymentSectionView extends VBox {
                                     t2 = System.currentTimeMillis();
                                     System.out.println("[Timing] Transaction insertion: " + (t2 - t1) + " ms");
                                     t1 = t2;
+                                    PosTransactionDAO.insertTransactionLog(
+                                        conn,
+                                        receiptNumber,
+                                        null,
+                                        posTransactionId,
+                                        null,
+                                        "in-store",
+                                        "sale",
+                                        "completed"
+                                    );
                                     // Prepare items for physical_sale_items
                                     List<Map<String, Object>> items = new ArrayList<>();
                                     for (CartItem item : cart) {
@@ -570,6 +590,16 @@ public class PaymentSectionView extends VBox {
                         t2 = System.currentTimeMillis();
                         System.out.println("[Timing] Transaction insertion: " + (t2 - t1) + " ms");
                         t1 = t2;
+                        PosTransactionDAO.insertTransactionLog(
+                            conn,
+                            receiptNumber,
+                            null,
+                            posTransactionId,
+                            null,
+                            "in-store",
+                            "sale",
+                            "completed"
+                        );
                         // Prepare items for physical_sale_items
                         List<Map<String, Object>> items = new ArrayList<>();
                         for (CartItem item : cart) {
