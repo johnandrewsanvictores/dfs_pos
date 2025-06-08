@@ -55,20 +55,13 @@ public class POSView extends BorderPane {
             @Override
             protected List<Product> call() throws Exception {
                 List<Product> productList = new ArrayList<>();
-                try (ResultSet rs = ProductDAO.getAllActiveProducts()) {
-                    while (rs.next()) {
-                        String sku = rs.getString("sku");
-                        double price = rs.getDouble("unit_price");
-                        String description = rs.getString("description");
-                        String imagePath = rs.getString("image_path");
-                        if (imagePath != null && !imagePath.isEmpty()) {
-                            imagePath = "http://localhost/dream_fashion_shop/assets/uploads/product_img/" + imagePath;
-                        }
-                        int quantity = rs.getInt("quantity");
-                        productList.add(new Product(sku, price, description, imagePath, quantity));
+                for (Product p : ProductDAO.getAllActiveProductsAsList()) {
+                    String imagePath = p.getImagePath();
+                    if (imagePath != null && !imagePath.isEmpty()) {
+                        imagePath = "http://localhost/dream_fashion_shop/assets/uploads/product_img/" + imagePath;
+                        p = new Product(p.getSku(), p.getPrice(), p.getDescription(), imagePath, p.getQuantity(), p.getCategoryId());
                     }
-                } catch (Exception e) {
-                    e.printStackTrace();
+                    productList.add(p);
                 }
                 return productList;
             }

@@ -32,12 +32,13 @@ public class ProductDAO {
     }
 
     // Fetch all active products for POS
-    public static ResultSet getAllActiveProducts() throws SQLException {
+    public static ResultSet getAllActiveProductsRaw() throws SQLException {
         Connection conn = DBConnection.getConnection();
         String sql = "SELECT " +
                      "i.id AS inventory_id, " +
                      "i.description, " +
                      "i.item_name, " +
+                     "i.category_id, " +
                      "d.sku, " +
                      "d.unit_price, " +
                      "d.quantity, " +
@@ -51,6 +52,7 @@ public class ProductDAO {
                      "i.id AS inventory_id, " +
                      "i.description, " +
                      "i.item_name, " +
+                     "i.category_id, " +
                      "opv.sku, " +
                      "opv.unit_price, " +
                      "opv.quantity, " +
@@ -62,6 +64,23 @@ public class ProductDAO {
                      "WHERE i.product_status = 'active' AND i.sale_channel = 'both'";
         PreparedStatement stmt = conn.prepareStatement(sql);
         return stmt.executeQuery();
+    }
+
+    // Efficiently fetch all active products as Product objects with categoryId
+    public static java.util.List<pos.model.Product> getAllActiveProductsAsList() throws SQLException {
+        java.util.List<pos.model.Product> products = new java.util.ArrayList<>();
+        try (ResultSet rs = getAllActiveProductsRaw()) {
+            while (rs.next()) {
+                String sku = rs.getString("sku");
+                double price = rs.getDouble("unit_price");
+                String description = rs.getString("description");
+                String imagePath = rs.getString("image_path");
+                int quantity = rs.getInt("quantity");
+                int categoryId = rs.getInt("category_id");
+                products.add(new pos.model.Product(sku, price, description, imagePath, quantity, categoryId));
+            }
+        }
+        return products;
     }
 
     // Get inventory_id and sale_channel by SKU
@@ -173,5 +192,26 @@ public class ProductDAO {
             }
             decreaseProductQuantitiesBatch(conn, batch, saleChannel);
         }
+    }
+
+    // Fetch category_id by SKU
+    public static Integer getCategoryIdBySku(Connection conn, String sku) throws SQLException {
+        String sql = "SELECT i.category_id FROM inventory i " +
+                     "JOIN in_store_product_details d ON i.id = d.inventory_product_id WHERE d.sku = ? " +
+                     "UNION ALL " +
+                     "SELECT i.category_id FROM inventory i " +
+                     "JOIN online_product_details opd ON i.id = opd.product_id " +
+                     "JOIN online_product_variant opv ON opd.id = opv.online_product_id WHERE opv.sku = ? ";
+        PreparedStatement stmt = conn.prepareStatement(sql);
+        stmt.setString(1, sku);
+        stmt.setString(2, sku);
+        ResultSet rs = stmt.executeQuery();
+        Integer categoryId = null;
+        if (rs.next()) {
+            categoryId = rs.getInt("category_id");
+        }
+        rs.close();
+        stmt.close();
+        return categoryId;
     }
 } 

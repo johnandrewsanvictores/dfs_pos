@@ -29,6 +29,10 @@ import pos.db.ProductDAO;
 import javafx.application.Platform;
 import java.util.concurrent.CountDownLatch;
 import javafx.concurrent.Task;
+import pos.db.PromotionDao;
+import java.sql.Connection;
+import java.util.concurrent.atomic.AtomicReference;
+import javafx.animation.Timeline;
 
 public class PaymentSectionView extends VBox {
     private final int staffId;
@@ -38,6 +42,8 @@ public class PaymentSectionView extends VBox {
     private final VBox paymentContent = new VBox();
     private final TextField refNoField = new TextField();
     private final VBox refNoBox = new VBox();
+    private List<pos.db.PromotionDao.Promotion> cachedPromotions = null;
+    private final Label discountSummary = new Label("Discount: ₱0.00");
 
     public PaymentSectionView(ObservableList<CartItem> cart, Product[] products, Runnable onPaymentCompleted, int staffId, String cashierName) {
         this.staffId = staffId;
@@ -64,7 +70,6 @@ public class PaymentSectionView extends VBox {
         summaryBox.getStyleClass().add("section");
         Label subtotalSummary = new Label();
         subtotalSummary.getStyleClass().add("payment-summary");
-        Label discountSummary = new Label("Discount: ₱0.00");
         Label totalSummary = new Label();
         totalSummary.getStyleClass().add("payment-summary");
         Label changeSummary = new Label();
@@ -75,6 +80,17 @@ public class PaymentSectionView extends VBox {
         totalSummary.setStyle("-fx-font-weight: bold;");
         changeSummary.setFont(new Font(14));
         summaryBox.getChildren().addAll(subtotalSummary, discountSummary, totalSummary, changeSummary);
+        // Fetch promotions ONCE and cache
+        try (java.sql.Connection conn = pos.db.DBConnection.getConnection()) {
+            cachedPromotions = pos.db.PromotionDao.getActiveAutomaticDiscounts(conn);
+        } catch (Exception e) {
+            e.printStackTrace();
+            cachedPromotions = new java.util.ArrayList<>();
+        }
+        System.out.println("Loaded promotions:");
+        for (PromotionDao.Promotion p : cachedPromotions) {
+            System.out.println(p.title + " | " + p.type + " | " + p.value + " | " + p.appliesToType + " | " + p.saleChannel + " | " + p.activationDate + " - " + p.expirationDate);
+        }
         setupCartListeners(subtotalSummary, totalSummary, cart);
         changeSummary.textProperty().bind(changeLabel.textProperty());
         Runnable updateChange = () -> {
@@ -458,15 +474,49 @@ public class PaymentSectionView extends VBox {
         // Use a StackPane as the root
         StackPane root = new StackPane(paymentContent, overlay);
         getChildren().add(root);
+
+        // Schedule periodic refresh
+        Timeline promoRefreshTimer = new Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.minutes(2), e -> refreshPromotions())
+        );
+        promoRefreshTimer.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        promoRefreshTimer.play();
     }
 
     private void setupCartListeners(Label subtotalSummary, Label totalSummary, ObservableList<CartItem> cart) {
         Runnable updateTotals = () -> {
-            double sum = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
-            subtotalSummary.setText("Subtotal: ₱" + String.format("%.2f", sum));
-            totalSummary.setText("Total: ₱" + String.format("%.2f", sum));
+            double subtotal = 0;
+            double totalDiscount = 0;
+            double finalTotal = 0;
+            for (CartItem item : cart) {
+                double price = item.getProduct().getPrice();
+                int qty = item.getQuantity();
+                double lineTotal = price * qty;
+                subtotal += lineTotal;
+                double maxDiscount = 0;
+                String appliedPromo = null;
+                int categoryId = item.getProduct().getCategoryId();
+                pos.db.PromotionDao.Promotion bestPromo = pos.db.PromotionDao.getBestPromotionForItem(null, item.getProduct().getSku(), categoryId, price, qty, cachedPromotions);
+                if (bestPromo != null) {
+                    if ("percentage".equals(bestPromo.type)) {
+                        maxDiscount = lineTotal * (bestPromo.value / 100.0);
+                    } else if ("fixed".equals(bestPromo.type)) {
+                        maxDiscount = Math.min(bestPromo.value, lineTotal);
+                    }
+                    appliedPromo = bestPromo.title;
+                }
+                item.setDiscount(maxDiscount);
+                item.setDiscountedTotal(lineTotal - maxDiscount);
+                item.setAppliedPromo(appliedPromo);
+                totalDiscount += maxDiscount;
+                System.out.println("Item: " + item.getProduct().getSku() + item.getProduct().getCategoryId() + ", Best promo: " + (bestPromo != null ? bestPromo.title : "none"));
+            }
+            finalTotal = subtotal - totalDiscount;
+            subtotalSummary.setText("Subtotal: ₱" + String.format("%.2f", subtotal));
+            discountSummary.setText("Discount: ₱" + String.format("%.2f", totalDiscount));
+            totalSummary.setText("Total: ₱" + String.format("%.2f", finalTotal));
         };
-        cart.addListener((ListChangeListener<CartItem>) c -> {
+        cart.addListener((javafx.collections.ListChangeListener<CartItem>) c -> {
             while (c.next()) {
                 if (c.wasAdded()) {
                     for (CartItem item : c.getAddedSubList()) {
@@ -702,5 +752,17 @@ public class PaymentSectionView extends VBox {
             }
         };
         new Thread(paymentTask).start();
+    }
+
+    private void refreshPromotions() {
+        try (java.sql.Connection conn = pos.db.DBConnection.getConnection()) {
+            cachedPromotions = pos.db.PromotionDao.getActiveAutomaticDiscounts(conn);
+        } catch (Exception e) {
+            e.printStackTrace();
+            cachedPromotions = new java.util.ArrayList<>();
+        }
+        // Re-apply discounts to cart
+        // (Assuming you have a method to update cart totals)
+        // updateTotals.run();
     }
 } 
