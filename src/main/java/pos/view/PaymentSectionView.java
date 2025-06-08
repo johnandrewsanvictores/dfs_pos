@@ -370,112 +370,112 @@ public class PaymentSectionView extends VBox {
     }
 
     private void processPayment(ObservableList<CartItem> cart, double subtotal, double discount, double tax, double total, double paid, boolean isEwallet, String refNo, Runnable onPaymentCompleted, TextField amountField, Label changeLabel, ComboBox<String> paymentMethod, String cashierName, Button payBtn, Label errorLabel) {
-        java.sql.Connection conn = null;
-        try {
-            conn = pos.db.DBConnection.getConnection();
-            conn.setAutoCommit(false);
-            String receiptNumber = PosTransactionDAO.generateNextInvoiceNo(conn);
-            int posTransactionId = PosTransactionDAO.insertPosTransaction(
-                conn,
-                receiptNumber,
-                new Timestamp(System.currentTimeMillis()),
-                paymentMethod.getValue(),
-                staffId,
-                subtotal,
+                    java.sql.Connection conn = null;
+                    try {
+                        conn = pos.db.DBConnection.getConnection();
+                        conn.setAutoCommit(false);
+                        String receiptNumber = PosTransactionDAO.generateNextInvoiceNo(conn);
+                        int posTransactionId = PosTransactionDAO.insertPosTransaction(
+                            conn,
+                            receiptNumber,
+                            new Timestamp(System.currentTimeMillis()),
+                            paymentMethod.getValue(),
+                            staffId,
+                            subtotal,
                 discount,
-                tax,
+                            tax,
                 total,
-                paid,
-                isEwallet ? refNo : null
-            );
-            String transactionId = PosTransactionDAO.generateNextTransactionId(conn);
-            PosTransactionDAO.insertTransactionLog(
-                conn,
-                transactionId,
-                null,
-                posTransactionId,
-                null,
-                "in-store",
-                "sale",
-                "completed"
-            );
-            List<Map<String, Object>> items = new ArrayList<>();
-            for (CartItem item : cart) {
-                Map<String, Object> row = new HashMap<>();
-                row.put("sku", item.getProduct().getSku());
-                row.put("order_quantity", item.getQuantity());
-                row.put("stock_quantity", item.getProduct().getQuantity());
-                row.put("subtotal", item.getSubtotal());
-                Integer onlineInventoryItemId = null;
-                Integer inStoreInventoryItemId = null;
-                String saleChannel = "in-store";
-                try {
-                    ProductDAO.InventoryItemInfo info = ProductDAO.getInventoryItemInfoBySku(conn, item.getProduct().getSku());
-                    if (info != null) {
-                        saleChannel = info.saleChannel;
-                        if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
-                            onlineInventoryItemId = info.inventoryItemId;
-                        } else {
-                            inStoreInventoryItemId = info.inventoryItemId;
+                            paid,
+                            isEwallet ? refNo : null
+                        );
+                        String transactionId = PosTransactionDAO.generateNextTransactionId(conn);
+                        PosTransactionDAO.insertTransactionLog(
+                            conn,
+                            transactionId,
+                            null,
+                            posTransactionId,
+                            null,
+                            "in-store",
+                            "sale",
+                            "completed"
+                        );
+                        List<Map<String, Object>> items = new ArrayList<>();
+                        for (CartItem item : cart) {
+                            Map<String, Object> row = new HashMap<>();
+                            row.put("sku", item.getProduct().getSku());
+                            row.put("order_quantity", item.getQuantity());
+                            row.put("stock_quantity", item.getProduct().getQuantity());
+                            row.put("subtotal", item.getSubtotal());
+                            Integer onlineInventoryItemId = null;
+                            Integer inStoreInventoryItemId = null;
+                            String saleChannel = "in-store";
+                            try {
+                                ProductDAO.InventoryItemInfo info = ProductDAO.getInventoryItemInfoBySku(conn, item.getProduct().getSku());
+                                if (info != null) {
+                                    saleChannel = info.saleChannel;
+                                    if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
+                                        onlineInventoryItemId = info.inventoryItemId;
+                                    } else {
+                                        inStoreInventoryItemId = info.inventoryItemId;
+                                    }
+                                }
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                            row.put("sale_channel", saleChannel);
+                            row.put("online_inventory_item_id", onlineInventoryItemId);
+                            row.put("in_store_inventory_item_id", inStoreInventoryItemId);
+                            items.add(row);
                         }
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-                row.put("sale_channel", saleChannel);
-                row.put("online_inventory_item_id", onlineInventoryItemId);
-                row.put("in_store_inventory_item_id", inStoreInventoryItemId);
-                items.add(row);
-            }
-            PosTransactionDAO.insertPhysicalSaleItems(conn, posTransactionId, items);
-            Map<String, Integer> inStoreMap = new java.util.HashMap<>();
-            Map<String, Integer> onlineMap = new java.util.HashMap<>();
-            for (CartItem item : cart) {
-                String sku = item.getProduct().getSku();
-                int qty = item.getQuantity();
-                String saleChannel = "in-store";
-                try {
-                    ProductDAO.InventoryInfo info = ProductDAO.getInventoryInfoBySku(conn, sku);
-                    if (info != null) {
-                        saleChannel = info.saleChannel;
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-                if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
-                    onlineMap.put(sku, qty);
-                } else {
-                    inStoreMap.put(sku, qty);
-                }
-            }
-            try {
-                if (!inStoreMap.isEmpty()) ProductDAO.batchUpdateInventory(conn, inStoreMap, "in-store");
-                if (!onlineMap.isEmpty()) ProductDAO.batchUpdateInventory(conn, onlineMap, "both");
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-            conn.commit();
+                        PosTransactionDAO.insertPhysicalSaleItems(conn, posTransactionId, items);
+                        Map<String, Integer> inStoreMap = new java.util.HashMap<>();
+                        Map<String, Integer> onlineMap = new java.util.HashMap<>();
+                        for (CartItem item : cart) {
+                            String sku = item.getProduct().getSku();
+                            int qty = item.getQuantity();
+                            String saleChannel = "in-store";
+                            try {
+                                ProductDAO.InventoryInfo info = ProductDAO.getInventoryInfoBySku(conn, sku);
+                                if (info != null) {
+                                    saleChannel = info.saleChannel;
+                                }
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                            if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
+                                onlineMap.put(sku, qty);
+                            } else {
+                                inStoreMap.put(sku, qty);
+                            }
+                        }
+                        try {
+                            if (!inStoreMap.isEmpty()) ProductDAO.batchUpdateInventory(conn, inStoreMap, "in-store");
+                            if (!onlineMap.isEmpty()) ProductDAO.batchUpdateInventory(conn, onlineMap, "both");
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                        conn.commit();
             javafx.application.Platform.runLater(() -> {
                 ReceiptDialog.show(cart, paid, total, paymentMethod.getValue(), paid - total, () -> {
-                    onPaymentCompleted.run();
-                    cart.clear();
-                    amountField.clear();
-                    changeLabel.setText("");
-                    paymentMethod.setValue("Cash");
-                    refNoField.clear();
-                    refNoBox.setVisible(false);
-                    refNoBox.setManaged(false);
+                                onPaymentCompleted.run();
+                                cart.clear();
+                                amountField.clear();
+                                changeLabel.setText("");
+                                paymentMethod.setValue("Cash");
+                                refNoField.clear();
+                                refNoBox.setVisible(false);
+                                refNoBox.setManaged(false);
                 }, cashierName, receiptNumber, discount, tax);
-            });
-        } catch (Exception ex) {
-            if (conn != null) {
-                try { conn.rollback(); } catch (Exception ignore) {}
-            }
-            ex.printStackTrace();
+                        });
+                    } catch (Exception ex) {
+                        if (conn != null) {
+                            try { conn.rollback(); } catch (Exception ignore) {}
+                        }
+                        ex.printStackTrace();
             javafx.application.Platform.runLater(() -> errorLabel.setText("Error processing transaction."));
-        } finally {
-            if (conn != null) try { conn.close(); } catch (Exception ignore) {}
-        }
+                    } finally {
+                        if (conn != null) try { conn.close(); } catch (Exception ignore) {}
+                    }
     }
 
     private void refreshPromotions() {
