@@ -33,6 +33,7 @@ import pos.db.PromotionDao;
 import java.sql.Connection;
 import java.util.concurrent.atomic.AtomicReference;
 import javafx.animation.Timeline;
+import pos.db.SystemSettingsDAO;
 
 public class PaymentSectionView extends VBox {
     private final int staffId;
@@ -44,6 +45,9 @@ public class PaymentSectionView extends VBox {
     private final VBox refNoBox = new VBox();
     private List<pos.db.PromotionDao.Promotion> cachedPromotions = null;
     private final Label discountSummary = new Label("Discount: ₱0.00");
+    private final Label taxSummary = new Label("Tax: ₱0.00");
+    private int cachedVatRate = 0;
+    private boolean cachedVatEnabled = false;
 
     public PaymentSectionView(ObservableList<CartItem> cart, Product[] products, Runnable onPaymentCompleted, int staffId, String cashierName) {
         this.staffId = staffId;
@@ -76,10 +80,11 @@ public class PaymentSectionView extends VBox {
         changeSummary.getStyleClass().add("payment-summary");
         subtotalSummary.setFont(new Font(14));
         discountSummary.setFont(new Font(14));
+        taxSummary.setFont(new Font(14));
         totalSummary.setFont(new Font(16));
         totalSummary.setStyle("-fx-font-weight: bold;");
         changeSummary.setFont(new Font(14));
-        summaryBox.getChildren().addAll(subtotalSummary, discountSummary, totalSummary, changeSummary);
+        summaryBox.getChildren().addAll(subtotalSummary, discountSummary, taxSummary, totalSummary, changeSummary);
         // Fetch promotions ONCE and cache
         try (java.sql.Connection conn = pos.db.DBConnection.getConnection()) {
             cachedPromotions = pos.db.PromotionDao.getActiveAutomaticDiscounts(conn);
@@ -91,10 +96,20 @@ public class PaymentSectionView extends VBox {
         for (PromotionDao.Promotion p : cachedPromotions) {
             System.out.println(p.title + " | " + p.type + " | " + p.value + " | " + p.appliesToType + " | " + p.saleChannel + " | " + p.activationDate + " - " + p.expirationDate);
         }
+        // Fetch VAT settings ONCE and cache
+        refreshVatSettings();
         setupCartListeners(subtotalSummary, totalSummary, cart);
         changeSummary.textProperty().bind(changeLabel.textProperty());
         Runnable updateChange = () -> {
-            double total = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
+            applyDiscountsToCart(cart);
+            double subtotal = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
+            double totalDiscount = getCurrentTotalDiscount(cart);
+            double tax = 0.0;
+            int vatRate = cachedVatEnabled ? cachedVatRate : 0;
+            if (vatRate > 0) {
+                tax = (subtotal - totalDiscount) * vatRate / 100.0;
+            }
+            double total = subtotal - totalDiscount + tax;
             String amtStr = amountField.getText();
             if (amtStr.isEmpty()) {
                 changeLabel.setText("");
@@ -149,7 +164,15 @@ public class PaymentSectionView extends VBox {
             }
         });
         Runnable handlePayment = () -> {
-            double total = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
+            applyDiscountsToCart(cart);
+            double subtotal = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
+            double totalDiscount = getCurrentTotalDiscount(cart);
+            double tax = 0.0;
+            int vatRate = cachedVatEnabled ? cachedVatRate : 0;
+            if (vatRate > 0) {
+                tax = (subtotal - totalDiscount) * vatRate / 100.0;
+            }
+            double total = subtotal - totalDiscount + tax;
             String amtStr = amountField.getText();
             errorLabel.setText("");
             boolean isEwallet = "E-Wallet".equals(paymentMethod.getValue());
@@ -158,15 +181,12 @@ public class PaymentSectionView extends VBox {
                 errorLabel.setText("Please enter amount paid.");
                 return;
             }
-            if (isEwallet && refNo == null || refNo.isEmpty()) {
+            if (isEwallet && (refNo == null || refNo.isEmpty())) {
                 errorLabel.setText("Reference number is required for E-Wallet payments.");
                 return;
             }
             try {
                 double paid = Double.parseDouble(amtStr);
-                double subtotal = total;
-                double discount = 0.0;
-                double tax = 0.0;
                 if (cart.isEmpty()) {
                     Platform.runLater(() -> {
                         errorLabel.setText("Cart is empty. Please add items to the cart.");
@@ -179,277 +199,13 @@ public class PaymentSectionView extends VBox {
                     if (paid < total) {
                         errorLabel.setText("Insufficient cash.");
                     } else {
-                        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
-                        confirm.setTitle("Confirm Payment");
-                        confirm.setHeaderText(null);
-                        confirm.setContentText("Are you sure you want to complete this payment?");
-                        confirm.initModality(Modality.APPLICATION_MODAL);
-                        confirm.showAndWait().ifPresent(type -> {
-                            if (type == ButtonType.OK) {
-                                java.sql.Connection conn = null;
-                                try {
-                                    conn = pos.db.DBConnection.getConnection();
-                                    conn.setAutoCommit(false);
-                                    long startTime = System.currentTimeMillis();
-                                    long t1 = startTime;
-                                    System.out.println("[Timing] Start payment process");
-                                    String receiptNumber = PosTransactionDAO.generateNextInvoiceNo(conn);
-                                    long t2 = System.currentTimeMillis();
-                                    System.out.println("[Timing] Invoice generation: " + (t2 - t1) + " ms");
-                                    t1 = t2;
-                                    int posTransactionId = PosTransactionDAO.insertPosTransaction(
-                                        conn,
-                                        receiptNumber,
-                                        new Timestamp(System.currentTimeMillis()),
-                                        paymentMethod.getValue(),
-                                        staffId,
-                                        subtotal,
-                                        discount,
-                                        tax,
-                                        total,
-                                        paid,
-                                        isEwallet ? refNo : null
-                                    );
-                                    t2 = System.currentTimeMillis();
-                                    System.out.println("[Timing] Transaction insertion: " + (t2 - t1) + " ms");
-                                    t1 = t2;
-                                    String transactionId = PosTransactionDAO.generateNextTransactionId(conn);
-                                    PosTransactionDAO.insertTransactionLog(
-                                        conn,
-                                        transactionId,
-                                        null,
-                                        posTransactionId,
-                                        null,
-                                        "in-store",
-                                        "sale",
-                                        "completed"
-                                    );
-                                    // Prepare items for physical_sale_items
-                                    List<Map<String, Object>> items = new ArrayList<>();
-                                    for (CartItem item : cart) {
-                                        Map<String, Object> row = new HashMap<>();
-                                        row.put("sku", item.getProduct().getSku());
-                                        row.put("order_quantity", item.getQuantity());
-                                        row.put("stock_quantity", item.getProduct().getQuantity());
-                                        row.put("subtotal", item.getSubtotal());
-                                        Integer onlineInventoryItemId = null;
-                                        Integer inStoreInventoryItemId = null;
-                                        String saleChannel = "in-store";
-                                        try {
-                                            ProductDAO.InventoryItemInfo info = ProductDAO.getInventoryItemInfoBySku(conn, item.getProduct().getSku());
-                                            if (info != null) {
-                                                saleChannel = info.saleChannel;
-                                                if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
-                                                    onlineInventoryItemId = info.inventoryItemId;
-                                                } else {
-                                                    inStoreInventoryItemId = info.inventoryItemId;
-                                                }
-                                            }
-                                        } catch (Exception e) {
-                                            e.printStackTrace();
-                                        }
-                                        row.put("sale_channel", saleChannel);
-                                        row.put("online_inventory_item_id", onlineInventoryItemId);
-                                        row.put("in_store_inventory_item_id", inStoreInventoryItemId);
-                                        items.add(row);
-                                    }
-                                    PosTransactionDAO.insertPhysicalSaleItems(conn, posTransactionId, items);
-                                    t2 = System.currentTimeMillis();
-                                    System.out.println("[Timing] Sale items batch insertion: " + (t2 - t1) + " ms");
-                                    t1 = t2;
-                                    // Decrease product quantities in the database efficiently using batch update
-                                    Map<String, Integer> inStoreMap = new java.util.HashMap<>();
-                                    Map<String, Integer> onlineMap = new java.util.HashMap<>();
-                                    for (CartItem item : cart) {
-                                        String sku = item.getProduct().getSku();
-                                        int qty = item.getQuantity();
-                                        String saleChannel = "in-store";
-                                        try {
-                                            ProductDAO.InventoryInfo info = ProductDAO.getInventoryInfoBySku(conn, sku);
-                                            if (info != null) {
-                                                saleChannel = info.saleChannel;
-                                            }
-                                        } catch (Exception e) {
-                                            e.printStackTrace();
-                                        }
-                                        if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
-                                            onlineMap.put(sku, qty);
-                                        } else {
-                                            inStoreMap.put(sku, qty);
-                                        }
-                                    }
-                                    try {
-                                        if (!inStoreMap.isEmpty()) ProductDAO.batchUpdateInventory(conn, inStoreMap, "in-store");
-                                        if (!onlineMap.isEmpty()) ProductDAO.batchUpdateInventory(conn, onlineMap, "both");
-                                    } catch (Exception e) {
-                                        e.printStackTrace();
-                                    }
-                                    t2 = System.currentTimeMillis();
-                                    System.out.println("[Timing] Inventory batch update: " + (t2 - t1) + " ms");
-                                    t1 = t2;
-                                    conn.commit();
-                                    ReceiptDialog.show(cart, paid, total, paymentMethod.getValue(), paid - total, () -> {
-                                        onPaymentCompleted.run();
-                                        cart.clear();
-                                        amountField.clear();
-                                        changeLabel.setText("");
-                                        paymentMethod.setValue("Cash");
-                                        refNoField.clear();
-                                        refNoBox.setVisible(false);
-                                        refNoBox.setManaged(false);
-                                    }, cashierName, receiptNumber);
-                                    t2 = System.currentTimeMillis();
-                                    System.out.println("[Timing] Receipt generation: " + (t2 - t1) + " ms");
-                                    System.out.println("[Timing] Total payment process: " + (t2 - startTime) + " ms");
-                                } catch (Exception ex) {
-                                    if (conn != null) {
-                                        try { conn.rollback(); } catch (Exception ignore) {}
-                                    }
-                                    ex.printStackTrace();
-                                    errorLabel.setText("Error processing transaction.");
-                                } finally {
-                                    if (conn != null) try { conn.close(); } catch (Exception ignore) {}
-                                }
-                            }
-                        });
+                        processPayment(cart, subtotal, totalDiscount, tax, total, paid, isEwallet, refNo, onPaymentCompleted, amountField, changeLabel, paymentMethod, cashierName, payBtn, errorLabel);
                     }
                 } else {
                     if (paid < total) {
                         errorLabel.setText("Insufficient amount.");
                     } else {
-                        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
-                        confirm.setTitle("Confirm Payment");
-                        confirm.setHeaderText(null);
-                        confirm.setContentText("Are you sure you want to complete this payment?");
-                        confirm.initModality(Modality.APPLICATION_MODAL);
-                        confirm.showAndWait().ifPresent(type -> {
-                            if (type == ButtonType.OK) {
-                                java.sql.Connection conn = null;
-                                try {
-                                    conn = pos.db.DBConnection.getConnection();
-                                    conn.setAutoCommit(false);
-                                    long startTime = System.currentTimeMillis();
-                                    long t1 = startTime;
-                                    System.out.println("[Timing] Start payment process");
-                                    String receiptNumber = PosTransactionDAO.generateNextInvoiceNo(conn);
-                                    long t2 = System.currentTimeMillis();
-                                    System.out.println("[Timing] Invoice generation: " + (t2 - t1) + " ms");
-                                    t1 = t2;
-                                    int posTransactionId = PosTransactionDAO.insertPosTransaction(
-                                        conn,
-                                        receiptNumber,
-                                        new Timestamp(System.currentTimeMillis()),
-                                        paymentMethod.getValue(),
-                                        staffId,
-                                        subtotal,
-                                        discount,
-                                        tax,
-                                        total,
-                                        paid,
-                                        isEwallet ? refNo : null
-                                    );
-                                    t2 = System.currentTimeMillis();
-                                    System.out.println("[Timing] Transaction insertion: " + (t2 - t1) + " ms");
-                                    t1 = t2;
-                                    String transactionId = PosTransactionDAO.generateNextTransactionId(conn);
-                                    PosTransactionDAO.insertTransactionLog(
-                                        conn,
-                                        transactionId,
-                                        null,
-                                        posTransactionId,
-                                        null,
-                                        "in-store",
-                                        "sale",
-                                        "completed"
-                                    );
-                                    // Prepare items for physical_sale_items
-                                    List<Map<String, Object>> items = new ArrayList<>();
-                                    for (CartItem item : cart) {
-                                        Map<String, Object> row = new HashMap<>();
-                                        row.put("sku", item.getProduct().getSku());
-                                        row.put("order_quantity", item.getQuantity());
-                                        row.put("stock_quantity", item.getProduct().getQuantity());
-                                        row.put("subtotal", item.getSubtotal());
-                                        Integer onlineInventoryItemId = null;
-                                        Integer inStoreInventoryItemId = null;
-                                        String saleChannel = "in-store";
-                                        try {
-                                            ProductDAO.InventoryItemInfo info = ProductDAO.getInventoryItemInfoBySku(conn, item.getProduct().getSku());
-                                            if (info != null) {
-                                                saleChannel = info.saleChannel;
-                                                if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
-                                                    onlineInventoryItemId = info.inventoryItemId;
-                                                } else {
-                                                    inStoreInventoryItemId = info.inventoryItemId;
-                                                }
-                                            }
-                                        } catch (Exception e) {
-                                            e.printStackTrace();
-                                        }
-                                        row.put("sale_channel", saleChannel);
-                                        row.put("online_inventory_item_id", onlineInventoryItemId);
-                                        row.put("in_store_inventory_item_id", inStoreInventoryItemId);
-                                        items.add(row);
-                                    }
-                                    PosTransactionDAO.insertPhysicalSaleItems(conn, posTransactionId, items);
-                                    t2 = System.currentTimeMillis();
-                                    System.out.println("[Timing] Sale items batch insertion: " + (t2 - t1) + " ms");
-                                    t1 = t2;
-                                    // Decrease product quantities in the database efficiently using batch update
-                                    Map<String, Integer> inStoreMap2 = new java.util.HashMap<>();
-                                    Map<String, Integer> onlineMap2 = new java.util.HashMap<>();
-                                    for (CartItem item : cart) {
-                                        String sku = item.getProduct().getSku();
-                                        int qty = item.getQuantity();
-                                        String saleChannel = "in-store";
-                                        try {
-                                            ProductDAO.InventoryInfo info = ProductDAO.getInventoryInfoBySku(conn, sku);
-                                            if (info != null) {
-                                                saleChannel = info.saleChannel;
-                                            }
-                                        } catch (Exception e) {
-                                            e.printStackTrace();
-                                        }
-                                        if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
-                                            onlineMap2.put(sku, qty);
-                                        } else {
-                                            inStoreMap2.put(sku, qty);
-                                        }
-                                    }
-                                    try {
-                                        if (!inStoreMap2.isEmpty()) ProductDAO.batchUpdateInventory(conn, inStoreMap2, "in-store");
-                                        if (!onlineMap2.isEmpty()) ProductDAO.batchUpdateInventory(conn, onlineMap2, "both");
-                                    } catch (Exception e) {
-                                        e.printStackTrace();
-                                    }
-                                    t2 = System.currentTimeMillis();
-                                    System.out.println("[Timing] Inventory batch update: " + (t2 - t1) + " ms");
-                                    t1 = t2;
-                                    conn.commit();
-                                    ReceiptDialog.show(cart, paid, total, paymentMethod.getValue(), paid - total, () -> {
-                                        onPaymentCompleted.run();
-                                        cart.clear();
-                                        amountField.clear();
-                                        changeLabel.setText("");
-                                        paymentMethod.setValue("Cash");
-                                        refNoField.clear();
-                                        refNoBox.setVisible(false);
-                                        refNoBox.setManaged(false);
-                                    }, cashierName, receiptNumber);
-                                    t2 = System.currentTimeMillis();
-                                    System.out.println("[Timing] Receipt generation: " + (t2 - t1) + " ms");
-                                    System.out.println("[Timing] Total payment process: " + (t2 - startTime) + " ms");
-                                } catch (Exception ex) {
-                                    if (conn != null) {
-                                        try { conn.rollback(); } catch (Exception ignore) {}
-                                    }
-                                    ex.printStackTrace();
-                                    errorLabel.setText("Error processing transaction.");
-                                } finally {
-                                    if (conn != null) try { conn.close(); } catch (Exception ignore) {}
-                                }
-                            }
-                        });
+                        processPayment(cart, subtotal, totalDiscount, tax, total, paid, isEwallet, refNo, onPaymentCompleted, amountField, changeLabel, paymentMethod, cashierName, payBtn, errorLabel);
                     }
                 }
             } catch (NumberFormatException ex) {
@@ -484,52 +240,31 @@ public class PaymentSectionView extends VBox {
     }
 
     private void setupCartListeners(Label subtotalSummary, Label totalSummary, ObservableList<CartItem> cart) {
-        Runnable updateTotals = () -> {
-            double subtotal = 0;
-            double totalDiscount = 0;
-            double finalTotal = 0;
-            for (CartItem item : cart) {
-                double price = item.getProduct().getPrice();
-                int qty = item.getQuantity();
-                double lineTotal = price * qty;
-                subtotal += lineTotal;
-                double maxDiscount = 0;
-                String appliedPromo = null;
-                int categoryId = item.getProduct().getCategoryId();
-                pos.db.PromotionDao.Promotion bestPromo = pos.db.PromotionDao.getBestPromotionForItem(null, item.getProduct().getSku(), categoryId, price, qty, cachedPromotions);
-                if (bestPromo != null) {
-                    if ("percentage".equals(bestPromo.type)) {
-                        maxDiscount = lineTotal * (bestPromo.value / 100.0);
-                    } else if ("fixed".equals(bestPromo.type)) {
-                        maxDiscount = Math.min(bestPromo.value, lineTotal);
-                    }
-                    appliedPromo = bestPromo.title;
-                }
-                item.setDiscount(maxDiscount);
-                item.setDiscountedTotal(lineTotal - maxDiscount);
-                item.setAppliedPromo(appliedPromo);
-                totalDiscount += maxDiscount;
-                System.out.println("Item: " + item.getProduct().getSku() + item.getProduct().getCategoryId() + ", Best promo: " + (bestPromo != null ? bestPromo.title : "none"));
+        Runnable updateSummaries = () -> {
+            applyDiscountsToCart(cart);
+            double subtotal = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
+            double totalDiscount = getCurrentTotalDiscount(cart);
+            double tax = 0.0;
+            int vatRate = cachedVatEnabled ? cachedVatRate : 0;
+            if (vatRate > 0) {
+                tax = (subtotal - totalDiscount) * vatRate / 100.0;
             }
-            finalTotal = subtotal - totalDiscount;
+            double finalTotal = subtotal - totalDiscount + tax;
             subtotalSummary.setText("Subtotal: ₱" + String.format("%.2f", subtotal));
-            discountSummary.setText("Discount: ₱" + String.format("%.2f", totalDiscount));
+            discountSummary.setText("Discount: -₱" + String.format("%.2f", totalDiscount));
+            taxSummary.setText("Tax (" + vatRate + "%): +₱" + String.format("%.2f", tax));
             totalSummary.setText("Total: ₱" + String.format("%.2f", finalTotal));
         };
-        cart.addListener((javafx.collections.ListChangeListener<CartItem>) c -> {
-            while (c.next()) {
-                if (c.wasAdded()) {
-                    for (CartItem item : c.getAddedSubList()) {
-                        item.quantityProperty().addListener((obs, oldVal, newVal) -> updateTotals.run());
-                    }
-                }
-            }
-            updateTotals.run();
-        });
+        cart.addListener((ListChangeListener<CartItem>) c -> updateSummaries.run());
+        updateSummaries.run();
+    }
+
+    private double getCurrentTotalDiscount(ObservableList<CartItem> cart) {
+        double totalDiscount = 0;
         for (CartItem item : cart) {
-            item.quantityProperty().addListener((obs, oldVal, newVal) -> updateTotals.run());
+            totalDiscount += item.getDiscount();
         }
-        updateTotals.run();
+        return totalDiscount;
     }
 
     private void runPaymentTask(ObservableList<CartItem> cart, Product[] products, Runnable onPaymentCompleted, int staffId, String cashierName, ComboBox<String> paymentMethod, TextField amountField, Label errorLabel, Label changeLabel, Button payBtn) {
@@ -537,7 +272,15 @@ public class PaymentSectionView extends VBox {
         Task<Void> paymentTask = new Task<>() {
             @Override
             protected Void call() throws Exception {
-                double total = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
+                applyDiscountsToCart(cart);
+                double subtotal = cart.stream().mapToDouble(CartItem::getSubtotal).sum();
+                double totalDiscount = getCurrentTotalDiscount(cart);
+                double tax = 0.0;
+                int vatRate = cachedVatEnabled ? cachedVatRate : 0;
+                if (vatRate > 0) {
+                    tax = (subtotal - totalDiscount) * vatRate / 100.0;
+                }
+                double total = subtotal - totalDiscount + tax;
                 String amtStr = amountField.getText();
                 Platform.runLater(() -> errorLabel.setText(""));
                 boolean isEwallet = "E-Wallet".equals(paymentMethod.getValue());
@@ -560,9 +303,6 @@ public class PaymentSectionView extends VBox {
                 }
                 try {
                     double paid = Double.parseDouble(amtStr);
-                    double subtotal = total;
-                    double discount = 0.0;
-                    double tax = 0.0;
                     if (cart.isEmpty()) {
                         Platform.runLater(() -> {
                             errorLabel.setText("Cart is empty. Please add items to the cart.");
@@ -615,132 +355,7 @@ public class PaymentSectionView extends VBox {
                     // Only show loader after confirmation
                     Platform.runLater(() -> overlay.setVisible(true));
                     // Payment logic (copied from original, with Platform.runLater for UI updates)
-                    java.sql.Connection conn = null;
-                    try {
-                        conn = pos.db.DBConnection.getConnection();
-                        conn.setAutoCommit(false);
-                        long startTime = System.currentTimeMillis();
-                        long t1 = startTime;
-                        System.out.println("[Timing] Start payment process");
-                        String receiptNumber = PosTransactionDAO.generateNextInvoiceNo(conn);
-                        long t2 = System.currentTimeMillis();
-                        System.out.println("[Timing] Invoice generation: " + (t2 - t1) + " ms");
-                        t1 = t2;
-                        int posTransactionId = PosTransactionDAO.insertPosTransaction(
-                            conn,
-                            receiptNumber,
-                            new Timestamp(System.currentTimeMillis()),
-                            paymentMethod.getValue(),
-                            staffId,
-                            subtotal,
-                            discount,
-                            tax,
-                            total,
-                            paid,
-                            isEwallet ? refNo : null
-                        );
-                        t2 = System.currentTimeMillis();
-                        System.out.println("[Timing] Transaction insertion: " + (t2 - t1) + " ms");
-                        t1 = t2;
-                        String transactionId = PosTransactionDAO.generateNextTransactionId(conn);
-                        PosTransactionDAO.insertTransactionLog(
-                            conn,
-                            transactionId,
-                            null,
-                            posTransactionId,
-                            null,
-                            "in-store",
-                            "sale",
-                            "completed"
-                        );
-                        // Prepare items for physical_sale_items
-                        List<Map<String, Object>> items = new ArrayList<>();
-                        for (CartItem item : cart) {
-                            Map<String, Object> row = new HashMap<>();
-                            row.put("sku", item.getProduct().getSku());
-                            row.put("order_quantity", item.getQuantity());
-                            row.put("stock_quantity", item.getProduct().getQuantity());
-                            row.put("subtotal", item.getSubtotal());
-                            Integer onlineInventoryItemId = null;
-                            Integer inStoreInventoryItemId = null;
-                            String saleChannel = "in-store";
-                            try {
-                                ProductDAO.InventoryItemInfo info = ProductDAO.getInventoryItemInfoBySku(conn, item.getProduct().getSku());
-                                if (info != null) {
-                                    saleChannel = info.saleChannel;
-                                    if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
-                                        onlineInventoryItemId = info.inventoryItemId;
-                                    } else {
-                                        inStoreInventoryItemId = info.inventoryItemId;
-                                    }
-                                }
-                            } catch (Exception e) {
-                                e.printStackTrace();
-                            }
-                            row.put("sale_channel", saleChannel);
-                            row.put("online_inventory_item_id", onlineInventoryItemId);
-                            row.put("in_store_inventory_item_id", inStoreInventoryItemId);
-                            items.add(row);
-                        }
-                        PosTransactionDAO.insertPhysicalSaleItems(conn, posTransactionId, items);
-                        t2 = System.currentTimeMillis();
-                        System.out.println("[Timing] Sale items batch insertion: " + (t2 - t1) + " ms");
-                        t1 = t2;
-                        // Decrease product quantities in the database efficiently using batch update
-                        Map<String, Integer> inStoreMap = new java.util.HashMap<>();
-                        Map<String, Integer> onlineMap = new java.util.HashMap<>();
-                        for (CartItem item : cart) {
-                            String sku = item.getProduct().getSku();
-                            int qty = item.getQuantity();
-                            String saleChannel = "in-store";
-                            try {
-                                ProductDAO.InventoryInfo info = ProductDAO.getInventoryInfoBySku(conn, sku);
-                                if (info != null) {
-                                    saleChannel = info.saleChannel;
-                                }
-                            } catch (Exception e) {
-                                e.printStackTrace();
-                            }
-                            if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
-                                onlineMap.put(sku, qty);
-                            } else {
-                                inStoreMap.put(sku, qty);
-                            }
-                        }
-                        try {
-                            if (!inStoreMap.isEmpty()) ProductDAO.batchUpdateInventory(conn, inStoreMap, "in-store");
-                            if (!onlineMap.isEmpty()) ProductDAO.batchUpdateInventory(conn, onlineMap, "both");
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                        t2 = System.currentTimeMillis();
-                        System.out.println("[Timing] Inventory batch update: " + (t2 - t1) + " ms");
-                        t1 = t2;
-                        conn.commit();
-                        Platform.runLater(() -> {
-                            ReceiptDialog.show(cart, paid, total, paymentMethod.getValue(), paid - total, () -> {
-                                onPaymentCompleted.run();
-                                cart.clear();
-                                amountField.clear();
-                                changeLabel.setText("");
-                                paymentMethod.setValue("Cash");
-                                refNoField.clear();
-                                refNoBox.setVisible(false);
-                                refNoBox.setManaged(false);
-                            }, cashierName, receiptNumber);
-                        });
-                        t2 = System.currentTimeMillis();
-                        System.out.println("[Timing] Receipt generation: " + (t2 - t1) + " ms");
-                        System.out.println("[Timing] Total payment process: " + (t2 - startTime) + " ms");
-                    } catch (Exception ex) {
-                        if (conn != null) {
-                            try { conn.rollback(); } catch (Exception ignore) {}
-                        }
-                        ex.printStackTrace();
-                        Platform.runLater(() -> errorLabel.setText("Error processing transaction."));
-                    } finally {
-                        if (conn != null) try { conn.close(); } catch (Exception ignore) {}
-                    }
+                    processPayment(cart, subtotal, totalDiscount, tax, total, paid, isEwallet, refNo, onPaymentCompleted, amountField, changeLabel, paymentMethod, cashierName, payBtn, errorLabel);
                 } catch (NumberFormatException ex) {
                     Platform.runLater(() -> errorLabel.setText("Invalid amount."));
                 }
@@ -754,6 +369,115 @@ public class PaymentSectionView extends VBox {
         new Thread(paymentTask).start();
     }
 
+    private void processPayment(ObservableList<CartItem> cart, double subtotal, double discount, double tax, double total, double paid, boolean isEwallet, String refNo, Runnable onPaymentCompleted, TextField amountField, Label changeLabel, ComboBox<String> paymentMethod, String cashierName, Button payBtn, Label errorLabel) {
+        java.sql.Connection conn = null;
+        try {
+            conn = pos.db.DBConnection.getConnection();
+            conn.setAutoCommit(false);
+            String receiptNumber = PosTransactionDAO.generateNextInvoiceNo(conn);
+            int posTransactionId = PosTransactionDAO.insertPosTransaction(
+                conn,
+                receiptNumber,
+                new Timestamp(System.currentTimeMillis()),
+                paymentMethod.getValue(),
+                staffId,
+                subtotal,
+                discount,
+                tax,
+                total,
+                paid,
+                isEwallet ? refNo : null
+            );
+            String transactionId = PosTransactionDAO.generateNextTransactionId(conn);
+            PosTransactionDAO.insertTransactionLog(
+                conn,
+                transactionId,
+                null,
+                posTransactionId,
+                null,
+                "in-store",
+                "sale",
+                "completed"
+            );
+            List<Map<String, Object>> items = new ArrayList<>();
+            for (CartItem item : cart) {
+                Map<String, Object> row = new HashMap<>();
+                row.put("sku", item.getProduct().getSku());
+                row.put("order_quantity", item.getQuantity());
+                row.put("stock_quantity", item.getProduct().getQuantity());
+                row.put("subtotal", item.getSubtotal());
+                Integer onlineInventoryItemId = null;
+                Integer inStoreInventoryItemId = null;
+                String saleChannel = "in-store";
+                try {
+                    ProductDAO.InventoryItemInfo info = ProductDAO.getInventoryItemInfoBySku(conn, item.getProduct().getSku());
+                    if (info != null) {
+                        saleChannel = info.saleChannel;
+                        if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
+                            onlineInventoryItemId = info.inventoryItemId;
+                        } else {
+                            inStoreInventoryItemId = info.inventoryItemId;
+                        }
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                row.put("sale_channel", saleChannel);
+                row.put("online_inventory_item_id", onlineInventoryItemId);
+                row.put("in_store_inventory_item_id", inStoreInventoryItemId);
+                items.add(row);
+            }
+            PosTransactionDAO.insertPhysicalSaleItems(conn, posTransactionId, items);
+            Map<String, Integer> inStoreMap = new java.util.HashMap<>();
+            Map<String, Integer> onlineMap = new java.util.HashMap<>();
+            for (CartItem item : cart) {
+                String sku = item.getProduct().getSku();
+                int qty = item.getQuantity();
+                String saleChannel = "in-store";
+                try {
+                    ProductDAO.InventoryInfo info = ProductDAO.getInventoryInfoBySku(conn, sku);
+                    if (info != null) {
+                        saleChannel = info.saleChannel;
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
+                    onlineMap.put(sku, qty);
+                } else {
+                    inStoreMap.put(sku, qty);
+                }
+            }
+            try {
+                if (!inStoreMap.isEmpty()) ProductDAO.batchUpdateInventory(conn, inStoreMap, "in-store");
+                if (!onlineMap.isEmpty()) ProductDAO.batchUpdateInventory(conn, onlineMap, "both");
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            conn.commit();
+            javafx.application.Platform.runLater(() -> {
+                ReceiptDialog.show(cart, paid, total, paymentMethod.getValue(), paid - total, () -> {
+                    onPaymentCompleted.run();
+                    cart.clear();
+                    amountField.clear();
+                    changeLabel.setText("");
+                    paymentMethod.setValue("Cash");
+                    refNoField.clear();
+                    refNoBox.setVisible(false);
+                    refNoBox.setManaged(false);
+                }, cashierName, receiptNumber, discount, tax);
+            });
+        } catch (Exception ex) {
+            if (conn != null) {
+                try { conn.rollback(); } catch (Exception ignore) {}
+            }
+            ex.printStackTrace();
+            javafx.application.Platform.runLater(() -> errorLabel.setText("Error processing transaction."));
+        } finally {
+            if (conn != null) try { conn.close(); } catch (Exception ignore) {}
+        }
+    }
+
     private void refreshPromotions() {
         try (java.sql.Connection conn = pos.db.DBConnection.getConnection()) {
             cachedPromotions = pos.db.PromotionDao.getActiveAutomaticDiscounts(conn);
@@ -763,6 +487,36 @@ public class PaymentSectionView extends VBox {
         }
         // Re-apply discounts to cart
         // (Assuming you have a method to update cart totals)
-        // updateTotals.run();
+        // updateSummaries.run();
+    }
+
+    private void refreshVatSettings() {
+        try {
+            cachedVatRate = SystemSettingsDAO.getVatRate();
+            cachedVatEnabled = SystemSettingsDAO.isVatEnabled();
+        } catch (Exception e) {
+            cachedVatRate = 0;
+            cachedVatEnabled = false;
+        }
+    }
+
+    private void applyDiscountsToCart(ObservableList<CartItem> cart) {
+        for (CartItem item : cart) {
+            double price = item.getProduct().getPrice();
+            int quantity = item.getQuantity();
+            int categoryId = item.getProduct().getCategoryId();
+            pos.db.PromotionDao.Promotion bestPromo = pos.db.PromotionDao.getBestPromotionForItem(
+                null, item.getProduct().getSku(), categoryId, price, quantity, cachedPromotions
+            );
+            double discount = 0.0;
+            if (bestPromo != null) {
+                if ("percentage".equals(bestPromo.type)) {
+                    discount = price * quantity * (bestPromo.value / 100.0);
+                } else if ("fixed".equals(bestPromo.type)) {
+                    discount = Math.min(bestPromo.value, price * quantity);
+                }
+            }
+            item.setDiscount(discount);
+        }
     }
 } 

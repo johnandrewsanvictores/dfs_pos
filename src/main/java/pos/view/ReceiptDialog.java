@@ -29,9 +29,13 @@ import net.sf.jasperreports.engine.JasperPrintManager;
 import javafx.application.Platform;
 
 public class ReceiptDialog {
-    public static void show(ObservableList<CartItem> cartSnapshot, double paid, double total, String paymentType, double change, Runnable afterPrint, String cashierName, String receiptNumber) {
+    public static void show(ObservableList<CartItem> cartSnapshot, double paid, double total, String paymentType, double change, Runnable afterPrint, String cashierName, String receiptNumber, double discount, double tax) {
+        int vatRate = 0;
+        if (total - discount > 0.01) {
+            vatRate = (int)Math.round((tax / (total - discount)) * 100);
+        }
         try {
-            generateAndPrintJasperReceipt(cartSnapshot, paid, total, paymentType, change, "", "", cashierName, receiptNumber);
+            generateAndPrintJasperReceipt(cartSnapshot, paid, total, paymentType, change, "", "", cashierName, receiptNumber, discount, tax, vatRate);
         } catch (Exception ex) {
             ex.printStackTrace();
         }
@@ -39,12 +43,10 @@ public class ReceiptDialog {
     }
 
     private static void generateAndPrintJasperReceipt(
-        ObservableList<CartItem> cartSnapshot, double paid, double totalInput, String paymentType, double change, String customerName, String customerPhone, String cashierName, String receiptNumber
+        ObservableList<CartItem> cartSnapshot, double paid, double totalInput, String paymentType, double change, String customerName, String customerPhone, String cashierName, String receiptNumber, double discount, double tax, int vatRate
     ) throws Exception {
         // Calculate values
         double subtotal = cartSnapshot.stream().mapToDouble(CartItem::getSubtotal).sum();
-        double discount = 0.0;
-        double tax = 0.0;
         double total = subtotal - discount + tax;
 
         // Prepare parameters
@@ -60,6 +62,7 @@ public class ReceiptDialog {
         params.put("Cashier", cashierName);
         params.put("Subtotal", subtotal);
         params.put("Discount", discount);
+        params.put("TaxLabel", "Tax (" + vatRate + "%)");
         params.put("Tax", tax);
         params.put("Total", total);
         params.put("Paid", paid);
@@ -67,6 +70,8 @@ public class ReceiptDialog {
         params.put("CustomerName", customerName);
         params.put("CustomerPhone", customerPhone);
         params.put("PaymentMethod", paymentType);
+        params.put("DiscountSign", "-");
+        params.put("TaxSign", "+");
 
         // Prepare item data
         java.util.List<java.util.Map<String, Object>> items = new java.util.ArrayList<>();
