@@ -8,6 +8,7 @@ import javafx.scene.layout.*;
 import javafx.scene.text.Font;
 import pos.model.CartItem;
 import pos.model.Product;
+import pos.db.DBCredentials;
 import pos.db.ProductDAO;
 import java.sql.ResultSet;
 import java.util.ArrayList;
@@ -58,7 +59,7 @@ public class POSView extends BorderPane {
                 for (Product p : ProductDAO.getAllActiveProductsAsList()) {
                     String imagePath = p.getImagePath();
                     if (imagePath != null && !imagePath.isEmpty()) {
-                        imagePath = "http://localhost/dream_fashion_shop/assets/uploads/product_img/" + imagePath;
+                        imagePath = DBCredentials.BASE_URL +"/assets/uploads/product_img/" + imagePath;
                         p = new Product(p.getSku(), p.getPrice(), p.getDescription(), imagePath, p.getQuantity(), p.getCategoryId());
                     }
                     productList.add(p);

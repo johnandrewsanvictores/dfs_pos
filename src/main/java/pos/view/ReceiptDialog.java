@@ -90,7 +90,7 @@ public class ReceiptDialog {
         net.sf.jasperreports.engine.JasperPrint jasperPrint = net.sf.jasperreports.engine.JasperFillManager.fillReport(jasperReport, params, dataSource);
 
         // Now print
-        JasperPrintManager.printReport(jasperPrint, true);
+        //JasperPrintManager.printReport(jasperPrint, true);
 
         // Debug prints and show JasperViewer on JavaFX thread
         System.out.println("About to show receipt...");
@@ -98,5 +98,7 @@ public class ReceiptDialog {
             net.sf.jasperreports.view.JasperViewer.viewReport(jasperPrint, false);
             System.out.println("Receipt dialog should have appeared.");
         });
+
+        
     }
 } 

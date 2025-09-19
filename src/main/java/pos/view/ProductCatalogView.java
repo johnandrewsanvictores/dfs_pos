@@ -187,6 +187,7 @@ public class ProductCatalogView extends VBox {
         nextPageBtn.setDisable(currentPage == maxPage);
         for (int i = startIdx; i < endIdx; i++) {
             Product p = displayProducts.get(i);
+
             VBox card = new VBox(8);
             card.setPadding(new Insets(10));
             card.setAlignment(Pos.CENTER);
