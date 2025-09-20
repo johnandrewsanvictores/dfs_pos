@@ -447,4 +447,9 @@ public class ProductCatalogView extends VBox {
         currentPage = 1;
         updateProductGridResponsive(filteredProducts, getWidth());
     }
+    
+    // Public method to allow barcode scanning to add products directly to cart
+    public void addProductToCartDirectly(Product product) {
+        addProductToCart(product);
+    }
 } 
