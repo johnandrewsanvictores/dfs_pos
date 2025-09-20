@@ -227,6 +227,8 @@ public class CartView extends VBox {
         
         if (canAddToCart(product)) {
             incrementCartItem(item, product);
+        } else {
+            showOutOfStockDialog(product);
         }
     }
 
@@ -294,6 +296,20 @@ public class CartView extends VBox {
         } else {
             label.setStyle(IN_STOCK_STYLE);
         }
+    }
+
+    private void showOutOfStockDialog(Product product) {
+        Alert alert = createOutOfStockAlert(product);
+        alert.showAndWait();
+    }
+
+    private Alert createOutOfStockAlert(Product product) {
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.setTitle("Out of Stock");
+        alert.setHeaderText("Cannot Add More Items");
+        alert.setContentText(String.format("The product '%s' is out of stock. Cannot add more items to cart.", 
+                                          product.getSku()));
+        return alert;
     }
 
     public void setupCartListeners(Label subtotalSummary, Label totalSummary) {

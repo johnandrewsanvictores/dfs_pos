@@ -65,7 +65,7 @@ public class PaymentSectionView extends VBox {
     private int cachedVatRate = 0;
     private boolean cachedVatEnabled = false;
 
-    public PaymentSectionView(ObservableList<CartItem> cart, Product[] products, Runnable onPaymentCompleted, int staffId, String cashierName) {
+    public PaymentSectionView(ObservableList<CartItem> cart, Product[] products, Runnable onPaymentCompleted, int staffId, String cashierName, Label dateLabel, Label timeLabel) {
         this.staffId = staffId;
         this.cashierName = cashierName;
         
@@ -79,6 +79,7 @@ public class PaymentSectionView extends VBox {
         Label errorLabel = createErrorLabel();
         Label changeLabel = createChangeLabel();
         VBox summaryBox = createSummaryBox();
+        VBox dateTimeBox = createDateTimeBox(dateLabel, timeLabel);
         Button payBtn = createPayButton();
         
         setupReferenceNumberField(paymentMethod);
@@ -86,7 +87,7 @@ public class PaymentSectionView extends VBox {
         setupChangeCalculation(cart, amountField, paymentMethod, changeLabel);
         setupPaymentHandling(cart, products, onPaymentCompleted, paymentMethod, amountField, errorLabel, payBtn);
         
-        assemblePaymentContent(paymentLabel, paymentMethod, amountField, errorLabel, payBtn, summaryBox);
+        assemblePaymentContent(paymentLabel, paymentMethod, amountField, errorLabel, payBtn, summaryBox, dateTimeBox);
         setupOverlayAndLoader();
         setupPeriodicRefresh();
     }
@@ -155,6 +156,19 @@ public class PaymentSectionView extends VBox {
         changeLabel.setFont(new Font(CHANGE_LABEL_FONT_SIZE));
         changeLabel.setStyle(CHANGE_LABEL_STYLE);
         return changeLabel;
+    }
+
+    private VBox createDateTimeBox(Label dateLabel, Label timeLabel) {
+        VBox dateTimeBox = new VBox(5);
+        dateTimeBox.getStyleClass().add("date-time-section");
+        
+        // Style the labels for the payment section
+        dateLabel.setStyle("-fx-text-fill: #1976d2; -fx-font-weight: bold; -fx-font-size: 14px;");
+        timeLabel.setStyle("-fx-text-fill: #1976d2; -fx-font-weight: bold; -fx-font-size: 18px;");
+        
+        dateTimeBox.getChildren().addAll(dateLabel, timeLabel);
+        VBox.setMargin(dateTimeBox, new Insets(COMPONENT_SPACING, 0, 0, 0));
+        return dateTimeBox;
     }
 
     private VBox createSummaryBox() {
@@ -286,13 +300,13 @@ public class PaymentSectionView extends VBox {
 
     private void assemblePaymentContent(Label paymentLabel, ComboBox<String> paymentMethod, 
                                       TextField amountField, Label errorLabel, 
-                                      Button payBtn, VBox summaryBox) {
+                                      Button payBtn, VBox summaryBox, VBox dateTimeBox) {
         Label paymentMethodLabel = new Label("Payment Method:");
         Label amountPaidLabel = new Label("Amount Paid");
         
         paymentContent.getChildren().addAll(
             paymentLabel, paymentMethodLabel, paymentMethod, 
-            amountPaidLabel, amountField, payBtn, errorLabel, summaryBox
+            amountPaidLabel, amountField, payBtn, errorLabel, summaryBox, dateTimeBox
         );
         paymentContent.setSpacing(COMPONENT_SPACING);
     }
@@ -361,6 +375,7 @@ public class PaymentSectionView extends VBox {
         
         Runnable updateSummaries = createSummaryUpdater(subtotalSummary, totalSummary, cart);
         cart.addListener((ListChangeListener<CartItem>) c -> updateSummaries.run());
+        setupCartItemQuantityListeners(cart, updateSummaries);
         updateSummaries.run();
     }
 

@@ -73,7 +73,7 @@ public class POSView extends BorderPane {
             mainContent = new HBox(10);
             ProductCatalogView productCatalog = new ProductCatalogView(products, cart);
             CartView cartView = new CartView(cart, productCatalog.getProductQuantityLabels());
-            PaymentSectionView paymentSection = new PaymentSectionView(cart, products, productCatalog::refreshAfterCheckout, staffId, cashierName);
+            PaymentSectionView paymentSection = new PaymentSectionView(cart, products, productCatalog::refreshAfterCheckout, staffId, cashierName, dateLabel, timeLabel);
             mainContent.getChildren().addAll(productCatalog, cartView, paymentSection);
             HBox.setHgrow(productCatalog, Priority.ALWAYS);
             HBox.setHgrow(cartView, Priority.ALWAYS);
@@ -105,6 +105,14 @@ public class POSView extends BorderPane {
         clock.play();
     }
 
+    public Label getDateLabel() {
+        return dateLabel;
+    }
+
+    public Label getTimeLabel() {
+        return timeLabel;
+    }
+
     private HBox buildHeader() {
         ImageView logo = new ImageView(getClass().getResource("/img/logo.jpg").toExternalForm());
         logo.setFitWidth(70);
@@ -131,25 +139,6 @@ public class POSView extends BorderPane {
     @Override
     public void layoutChildren() {
         super.layoutChildren();
-        if (dateLabel != null && !getChildren().contains(dateLabel)) {
-            getChildren().add(dateLabel);
-        }
-        if (timeLabel != null && !getChildren().contains(timeLabel)) {
-            getChildren().add(timeLabel);
-        }
-        if (dateLabel != null && timeLabel != null) {
-            double width = getWidth();
-            double height = getHeight();
-            double dateWidth = dateLabel.prefWidth(-1);
-            double dateHeight = dateLabel.prefHeight(-1);
-            double timeWidth = timeLabel.prefWidth(-1);
-            double timeHeight = timeLabel.prefHeight(-1);
-            double maxWidth = Math.max(dateWidth, timeWidth);
-            double totalHeight = dateHeight + timeHeight + 5;
-            double x = width - maxWidth - 30;
-            double y = height - totalHeight - 20;
-            dateLabel.resizeRelocate(x, y, maxWidth, dateHeight);
-            timeLabel.resizeRelocate(x, y + dateHeight + 5, maxWidth, timeHeight);
-        }
+        // Time and date are now handled by PaymentSectionView
     }
 } 
