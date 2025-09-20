@@ -17,251 +17,416 @@ import javafx.animation.PauseTransition;
 import javafx.util.Duration;
 
 public class ProductCatalogView extends VBox {
+    
+    // Constants
+    private static final int PRODUCTS_PER_PAGE = 20;
+    private static final int MIN_CARD_WIDTH = 180;
+    private static final int CARD_SPACING = 10;
+    private static final int GRID_PADDING = 10;
+    private static final int SEARCH_DEBOUNCE_DELAY_MS = 200;
+    private static final double LOADER_SIZE = 60.0;
+    private static final double CARD_IMAGE_HEIGHT = 80.0;
+    private static final double CARD_IMAGE_PADDING = 40.0;
+    
+    // Style constants
+    private static final String CARD_STYLE = "-fx-background-color: #fff; -fx-border-color: #e0e0e0; -fx-border-radius: 8; -fx-background-radius: 8;";
+    private static final String ADD_BUTTON_STYLE = "-fx-background-color: #1976d2; -fx-text-fill: white; -fx-background-radius: 5;";
+    private static final String SHORTCUT_BADGE_STYLE = "-fx-background-color: #eee; -fx-padding: 2 8; -fx-border-radius: 4; -fx-border-color: #ccc; -fx-font-size: 10px; -fx-text-fill: #333;";
+    private static final String OUT_OF_STOCK_STYLE = "-fx-text-fill: #d32f2f;";
+    private static final String LOW_STOCK_STYLE = "-fx-text-fill: #fbc02d;";
+    private static final String IN_STOCK_STYLE = "-fx-text-fill: #388e3c;";
+    
+    // UI Components
     private final GridPane productGrid = new GridPane();
-    private final ObservableList<Product> filteredProducts;
+    private final ObservableList<Product> filteredProducts = FXCollections.observableArrayList();
     private final Map<Product, Label> productQuantityLabels = new HashMap<>();
     private int currentPage = 1;
-    private final int productsPerPage = 20;
     private Label pageLabel;
     private Button prevPageBtn;
     private Button nextPageBtn;
     private ProgressIndicator catalogLoader;
-    private double lastCatalogWidth = 800;
     private final ObservableList<CartItem> cart;
     private final TextField searchField;
 
     public ProductCatalogView(Product[] products, ObservableList<CartItem> cart) {
         this.cart = cart;
-        setPadding(new Insets(10));
+        this.searchField = new TextField();
+        
+        initializeComponent();
+        initializeFilteredProducts(products);
+        
+        Label catalogLabel = createCatalogLabel();
+        HBox searchBox = createSearchBox();
+        setupProductGrid();
+        catalogLoader = createLoader();
+        StackPane gridStack = createGridStack();
+        
+        setupPaginationControls();
+        HBox paginationBox = createPaginationBox();
+        
+        setupSearchFunctionality(products);
+        setupResponsiveLayout();
+        ScrollPane scrollPane = createScrollPane(gridStack);
+        setupKeyboardShortcuts();
+        
+        assembleLayout(catalogLabel, searchBox, scrollPane, paginationBox);
+        
+        // Initial render
+        updateProductGridResponsive(filteredProducts, getWidth());
+    }
+
+    private void initializeComponent() {
+        setPadding(new Insets(GRID_PADDING));
         getStyleClass().add("card");
+        setSpacing(0);
+    }
+
+    private void initializeFilteredProducts(Product[] products) {
+        filteredProducts.setAll(
+            Arrays.stream(products)
+                .filter(p -> p.getQuantity() > 0)
+                .collect(Collectors.toList())
+        );
+    }
+
+    private Label createCatalogLabel() {
         Label catalogLabel = new Label("Product Catalog");
         catalogLabel.getStyleClass().add("section-title");
         catalogLabel.setFont(new Font(18));
         VBox.setMargin(catalogLabel, new Insets(0, 0, 10, 0));
+        return catalogLabel;
+    }
+
+    private HBox createSearchBox() {
         HBox searchBox = new HBox(5);
+        
         ImageView searchIcon = new ImageView(getClass().getResource("/img/search.png").toExternalForm());
         searchIcon.setFitWidth(22);
         searchIcon.setFitHeight(22);
-        searchField = new TextField();
+        
         searchField.setPromptText("Search products...");
         searchField.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(searchField, Priority.ALWAYS);
+        
         Label shortcutBadge = new Label("F1");
-        shortcutBadge.setStyle(
-            "-fx-background-color: #eee;" +
-            "-fx-padding: 2 8;" +
-            "-fx-border-radius: 4;" +
-            "-fx-border-color: #ccc;" +
-            "-fx-font-size: 10px;" +
-            "-fx-text-fill: #333;"
-        );
+        shortcutBadge.setStyle(SHORTCUT_BADGE_STYLE);
+        
         searchBox.getChildren().addAll(searchIcon, searchField, shortcutBadge);
         searchBox.setAlignment(Pos.CENTER_LEFT);
         searchBox.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(searchBox, Priority.ALWAYS);
         VBox.setMargin(searchBox, new Insets(0, 0, 15, 0));
-        productGrid.setHgap(10);
-        productGrid.setVgap(10);
-        productGrid.setPadding(new Insets(10));
-        filteredProducts = FXCollections.observableArrayList(
-            Arrays.stream(products).filter(p -> p.getQuantity() > 0).collect(Collectors.toList())
-        );
-        catalogLoader = new ProgressIndicator();
-        catalogLoader.setMaxSize(60, 60);
-        catalogLoader.setVisible(false);
+        
+        return searchBox;
+    }
+
+    private void setupProductGrid() {
+        productGrid.setHgap(CARD_SPACING);
+        productGrid.setVgap(CARD_SPACING);
+        productGrid.setPadding(new Insets(GRID_PADDING));
+    }
+
+    private ProgressIndicator createLoader() {
+        ProgressIndicator loader = new ProgressIndicator();
+        loader.setMaxSize(LOADER_SIZE, LOADER_SIZE);
+        loader.setVisible(false);
+        return loader;
+    }
+
+    private StackPane createGridStack() {
         StackPane gridStack = new StackPane(productGrid, catalogLoader);
         gridStack.setAlignment(Pos.CENTER);
+        return gridStack;
+    }
+
+    private void setupPaginationControls() {
         prevPageBtn = new Button("Previous");
         nextPageBtn = new Button("Next");
         pageLabel = new Label();
-        prevPageBtn.setOnAction(e -> {
-            if (currentPage > 1) {
-                currentPage--;
-                updateProductGridResponsive(filteredProducts, getWidth());
-            }
-        });
-        nextPageBtn.setOnAction(e -> {
-            int maxPage = (int) Math.ceil((double) filteredProducts.size() / productsPerPage);
-            if (currentPage < maxPage) {
-                currentPage++;
-                updateProductGridResponsive(filteredProducts, getWidth());
-            }
-        });
+        
+        prevPageBtn.setOnAction(e -> navigateToPreviousPage());
+        nextPageBtn.setOnAction(e -> navigateToNextPage());
+    }
+
+    private HBox createPaginationBox() {
         HBox paginationBox = new HBox(10, prevPageBtn, pageLabel, nextPageBtn);
         paginationBox.setAlignment(Pos.CENTER);
         VBox.setMargin(paginationBox, new Insets(10, 0, 0, 0));
-        PauseTransition searchDebounce = new PauseTransition(Duration.millis(200));
+        return paginationBox;
+    }
+
+    private void setupSearchFunctionality(Product[] products) {
+        PauseTransition searchDebounce = new PauseTransition(Duration.millis(SEARCH_DEBOUNCE_DELAY_MS));
         searchField.textProperty().addListener((obs, old, val) -> {
             searchDebounce.stop();
-            searchDebounce.setOnFinished(e -> {
-                filteredProducts.setAll(
-                    Arrays.stream(products)
-                        .filter(p -> p.getSku().toLowerCase().contains(val.toLowerCase()) && p.getQuantity() > 0)
-                        .collect(Collectors.toList())
-                );
-                currentPage = 1;
-                updateProductGridResponsive(filteredProducts, getWidth());
-            });
+            searchDebounce.setOnFinished(e -> performSearch(products, val));
             searchDebounce.playFromStart();
         });
+        
+        // Enter key functionality for quick add to cart
+        searchField.setOnAction(e -> handleSearchEnterKey());
+    }
+
+    private void setupResponsiveLayout() {
         widthProperty().addListener((obs, oldVal, newVal) -> {
-            lastCatalogWidth = newVal.doubleValue();
-            updateProductGridResponsive(filteredProducts, lastCatalogWidth);
+            updateProductGridResponsive(filteredProducts, newVal.doubleValue());
         });
-        lastCatalogWidth = 800;
-        updateProductGridResponsive(filteredProducts, lastCatalogWidth);
+    }
+
+    private ScrollPane createScrollPane(StackPane gridStack) {
         ScrollPane scrollPane = new ScrollPane(gridStack);
         scrollPane.setFitToWidth(true);
         scrollPane.setFitToHeight(true);
         scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
         VBox.setVgrow(scrollPane, Priority.ALWAYS);
-        getChildren().addAll(catalogLabel, searchBox, scrollPane, paginationBox);
-        setSpacing(0);
+        return scrollPane;
+    }
 
-        // --- Keyboard and focus enhancements ---
+    private void setupKeyboardShortcuts() {
         // Auto-focus search field when shown
         sceneProperty().addListener((obs, oldScene, newScene) -> {
             if (newScene != null) {
-                newScene.windowProperty().addListener((o, ow, nw) -> {
-                    if (nw != null) {
-                        nw.setOnShown(e -> searchField.requestFocus());
-                    }
-                });
-                // F1 shortcut to focus search field
-                newScene.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, ke -> {
-                    if (ke.getCode() == javafx.scene.input.KeyCode.F1) {
-                        searchField.requestFocus();
-                        ke.consume();
-                    }
-                });
-            }
-        });
-        // Enter in search field: add first matching product to cart
-        searchField.setOnAction(e -> {
-            String search = searchField.getText().trim().toLowerCase();
-            Optional<Product> match = filteredProducts.stream()
-                .filter(p -> p.getSku().toLowerCase().equals(search) && p.getQuantity() > 0)
-                .findFirst();
-            if (match.isPresent()) {
-                Product p = match.get();
-                CartItem found = cart.stream().filter(ci -> ci.getProduct().getSku().equals(p.getSku())).findFirst().orElse(null);
-                if (found != null) {
-                    found.setQuantity(found.getQuantity() + 1);
-                } else {
-                    cart.add(new CartItem(p, 1));
-                }
-                p.setQuantity(p.getQuantity() - 1);
-                Label qLabel = productQuantityLabels.get(p);
-                if (qLabel != null) {
-                    qLabel.setText("Available: " + p.getQuantity());
-                    if (p.getQuantity() == 0) {
-                        qLabel.setStyle("-fx-text-fill: #d32f2f;");
-                    } else if (p.getQuantity() <= 3) {
-                        qLabel.setStyle("-fx-text-fill: #fbc02d;");
-                    } else {
-                        qLabel.setStyle("-fx-text-fill: #388e3c;");
-                    }
-                }
-                // Clear the search field after adding to cart
-                searchField.clear();
+                setupWindowFocusListener(newScene);
+                setupKeyboardShortcuts(newScene);
             }
         });
     }
 
+    private void assembleLayout(Label catalogLabel, HBox searchBox, ScrollPane scrollPane, HBox paginationBox) {
+        getChildren().addAll(catalogLabel, searchBox, scrollPane, paginationBox);
+    }
+
+    private void navigateToPreviousPage() {
+        if (currentPage > 1) {
+            currentPage--;
+            updateProductGridResponsive(filteredProducts, getWidth());
+        }
+    }
+
+    private void navigateToNextPage() {
+        int maxPage = (int) Math.ceil((double) filteredProducts.size() / PRODUCTS_PER_PAGE);
+        if (currentPage < maxPage) {
+            currentPage++;
+            updateProductGridResponsive(filteredProducts, getWidth());
+        }
+    }
+
+    private void performSearch(Product[] products, String searchValue) {
+        filteredProducts.setAll(
+            Arrays.stream(products)
+                .filter(p -> p.getSku().toLowerCase().contains(searchValue.toLowerCase()) && p.getQuantity() > 0)
+                .collect(Collectors.toList())
+        );
+        currentPage = 1;
+        updateProductGridResponsive(filteredProducts, getWidth());
+    }
+
+    private void handleSearchEnterKey() {
+        String search = searchField.getText().trim().toLowerCase();
+        Optional<Product> match = filteredProducts.stream()
+            .filter(p -> p.getSku().toLowerCase().equals(search) && p.getQuantity() > 0)
+            .findFirst();
+        
+        if (match.isPresent()) {
+            addProductToCart(match.get());
+            searchField.clear();
+        }
+    }
+
+    private void setupWindowFocusListener(javafx.scene.Scene newScene) {
+        newScene.windowProperty().addListener((o, ow, nw) -> {
+            if (nw != null) {
+                nw.setOnShown(e -> searchField.requestFocus());
+            }
+        });
+    }
+
+    private void setupKeyboardShortcuts(javafx.scene.Scene newScene) {
+        // F1 shortcut to focus search field
+        newScene.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, ke -> {
+            if (ke.getCode() == javafx.scene.input.KeyCode.F1) {
+                searchField.requestFocus();
+                ke.consume();
+            }
+        });
+    }
+
+    private void addProductToCart(Product product) {
+        if (product.getQuantity() > 0) {
+            CartItem found = cart.stream()
+                .filter(ci -> ci.getProduct().getSku().equals(product.getSku()))
+                .findFirst()
+                .orElse(null);
+            
+            if (found != null) {
+                found.setQuantity(found.getQuantity() + 1);
+            } else {
+                cart.add(new CartItem(product, 1));
+            }
+            
+            product.setQuantity(product.getQuantity() - 1);
+            updateQuantityLabel(product);
+        }
+    }
+
+    private void updateQuantityLabel(Product product) {
+        Label quantityLabel = productQuantityLabels.get(product);
+        if (quantityLabel != null) {
+            quantityLabel.setText("Available: " + product.getQuantity());
+            
+            if (product.getQuantity() == 0) {
+                quantityLabel.setStyle(OUT_OF_STOCK_STYLE);
+            } else if (product.getQuantity() <= 3) {
+                quantityLabel.setStyle(LOW_STOCK_STYLE);
+            } else {
+                quantityLabel.setStyle(IN_STOCK_STYLE);
+            }
+        }
+    }
+
     private void updateProductGridResponsive(ObservableList<Product> products, double width) {
         if (catalogLoader != null) catalogLoader.setVisible(true);
+        
+        clearProductGrid();
+        GridLayoutInfo layoutInfo = calculateGridLayout(products, width);
+        updatePaginationControls(layoutInfo);
+        
+        for (int i = layoutInfo.startIndex; i < layoutInfo.endIndex; i++) {
+            Product product = layoutInfo.displayProducts.get(i);
+            VBox productCard = createProductCard(product, layoutInfo.cardWidth);
+            int gridCol = (i - layoutInfo.startIndex) % layoutInfo.columns;
+            int gridRow = (i - layoutInfo.startIndex) / layoutInfo.columns;
+            productGrid.add(productCard, gridCol, gridRow);
+        }
+        
+        if (catalogLoader != null) catalogLoader.setVisible(false);
+    }
+
+    private void clearProductGrid() {
         productGrid.getChildren().clear();
         productQuantityLabels.clear();
-        int minCardWidth = 180;
-        int cols = Math.max(1, (int) (width / (minCardWidth + 10)));
-        double cardWidth = (width - (cols - 1) * 20 - 55) / cols;
-        List<Product> displayProducts = products.stream().filter(p -> p.getQuantity() > 0).collect(Collectors.toList());
-        int totalProducts = displayProducts.size();
-        int maxPage = Math.max(1, (int) Math.ceil((double) totalProducts / productsPerPage));
-        if (currentPage > maxPage) currentPage = maxPage;
-        int startIdx = (currentPage - 1) * productsPerPage;
-        int endIdx = Math.min(startIdx + productsPerPage, totalProducts);
-        pageLabel.setText("Page " + currentPage + " of " + maxPage);
-        prevPageBtn.setDisable(currentPage == 1);
-        nextPageBtn.setDisable(currentPage == maxPage);
-        for (int i = startIdx; i < endIdx; i++) {
-            Product p = displayProducts.get(i);
+    }
 
-            VBox card = new VBox(8);
-            card.setPadding(new Insets(10));
-            card.setAlignment(Pos.CENTER);
-            card.setStyle("-fx-background-color: #fff; -fx-border-color: #e0e0e0; -fx-border-radius: 8; -fx-background-radius: 8;");
-            card.setPrefWidth(cardWidth);
-            card.setMaxWidth(cardWidth);
-            card.setMinWidth(cardWidth);
-            ImageView img = new ImageView();
-            // Use a placeholder image while loading
-            Image placeholder = new Image(getClass().getResourceAsStream("/img/placeholder.jpg"));
-            img.setImage(placeholder);
-            try {
-                Image realImage;
-                String imagePath = p.getImagePath();
-                if (imagePath != null && (imagePath.startsWith("http://") || imagePath.startsWith("https://"))) {
-                    realImage = new Image(imagePath, true);
-                } else if (imagePath != null && !imagePath.isEmpty()) {
-                    realImage = new Image(getClass().getResource(imagePath).toExternalForm(), true);
-                } else {
-                    realImage = placeholder;
-                }
-                if (realImage.isError()) {
-                    realImage = placeholder;
-                }
-                img.setImage(realImage);
-            } catch (Exception ex) {
-                img.setImage(placeholder);
+    private GridLayoutInfo calculateGridLayout(ObservableList<Product> products, double width) {
+        int cols = Math.max(1, (int) (width / (MIN_CARD_WIDTH + CARD_SPACING)));
+        double cardWidth = (width - (cols - 1) * (CARD_SPACING * 2) - (GRID_PADDING * 5)) / cols;
+        
+        List<Product> displayProducts = products.stream()
+            .filter(p -> p.getQuantity() > 0)
+            .collect(Collectors.toList());
+        
+        int totalProducts = displayProducts.size();
+        int maxPage = Math.max(1, (int) Math.ceil((double) totalProducts / PRODUCTS_PER_PAGE));
+        if (currentPage > maxPage) currentPage = maxPage;
+        
+        int startIdx = (currentPage - 1) * PRODUCTS_PER_PAGE;
+        int endIdx = Math.min(startIdx + PRODUCTS_PER_PAGE, totalProducts);
+        
+        return new GridLayoutInfo(cols, cardWidth, displayProducts, totalProducts, maxPage, startIdx, endIdx);
+    }
+
+    private void updatePaginationControls(GridLayoutInfo layoutInfo) {
+        pageLabel.setText("Page " + currentPage + " of " + layoutInfo.maxPage);
+        prevPageBtn.setDisable(currentPage == 1);
+        nextPageBtn.setDisable(currentPage == layoutInfo.maxPage);
+    }
+
+    private VBox createProductCard(Product product, double cardWidth) {
+        VBox card = createCardContainer(cardWidth);
+        ImageView productImage = createProductImage(product, cardWidth);
+        Label productName = createProductNameLabel(product);
+        Label productPrice = createProductPriceLabel(product);
+        Label quantityLabel = createQuantityLabel(product);
+        Button addButton = createAddToCartButton(product);
+        
+        card.getChildren().addAll(productImage, productName, productPrice, quantityLabel, addButton);
+        return card;
+    }
+
+    private VBox createCardContainer(double cardWidth) {
+        VBox card = new VBox(8);
+        card.setPadding(new Insets(CARD_SPACING));
+        card.setAlignment(Pos.CENTER);
+        card.setStyle(CARD_STYLE);
+        card.setPrefWidth(cardWidth);
+        card.setMaxWidth(cardWidth);
+        card.setMinWidth(cardWidth);
+        return card;
+    }
+
+    private ImageView createProductImage(Product product, double cardWidth) {
+        ImageView img = new ImageView();
+        Image placeholder = new Image(getClass().getResourceAsStream("/img/placeholder.jpg"));
+        img.setImage(loadProductImage(product, placeholder));
+        img.setFitWidth(cardWidth - CARD_IMAGE_PADDING);
+        img.setFitHeight(CARD_IMAGE_HEIGHT);
+        img.setPreserveRatio(true);
+        return img;
+    }
+
+    private Image loadProductImage(Product product, Image placeholder) {
+        try {
+            String imagePath = product.getImagePath();
+            if (imagePath != null && (imagePath.startsWith("http://") || imagePath.startsWith("https://"))) {
+                Image realImage = new Image(imagePath, true);
+                return realImage.isError() ? placeholder : realImage;
+            } else if (imagePath != null && !imagePath.isEmpty()) {
+                Image realImage = new Image(getClass().getResource(imagePath).toExternalForm(), true);
+                return realImage.isError() ? placeholder : realImage;
             }
-            img.setFitWidth(cardWidth - 40);
-            img.setFitHeight(80);
-            img.setPreserveRatio(true);
-            Label name = new Label(p.getSku());
-            name.setFont(new Font(14));
-            name.setStyle("-fx-font-weight: bold;");
-            Label price = new Label(String.format("₱%.2f", p.getPrice()));
-            price.setFont(new Font(13));
-            Label quantityLabel = new Label("Available: " + p.getQuantity());
-            productQuantityLabels.put(p, quantityLabel);
-            quantityLabel.setFont(new Font(12));
-            if (p.getQuantity() == 0) {
-                quantityLabel.setStyle("-fx-text-fill: #d32f2f;");
-            } else if (p.getQuantity() <= 3) {
-                quantityLabel.setStyle("-fx-text-fill: #fbc02d;");
-            } else {
-                quantityLabel.setStyle("-fx-text-fill: #388e3c;");
-            }
-            Button addBtn = new Button("+ Add to Cart");
-            addBtn.setStyle("-fx-background-color: #1976d2; -fx-text-fill: white; -fx-background-radius: 5;");
-            addBtn.setOnAction(e -> {
-                if (p.getQuantity() > 0) {
-                    CartItem found = cart.stream().filter(ci -> ci.getProduct().getSku().equals(p.getSku())).findFirst().orElse(null);
-                    if (found != null) {
-                        found.setQuantity(found.getQuantity() + 1);
-                    } else {
-                        cart.add(new CartItem(p, 1));
-                    }
-                    p.setQuantity(p.getQuantity() - 1);
-                    Label qLabel = productQuantityLabels.get(p);
-                    if (qLabel != null) {
-                        qLabel.setText("Available: " + p.getQuantity());
-                        if (p.getQuantity() == 0) {
-                            qLabel.setStyle("-fx-text-fill: #d32f2f;");
-                        } else if (p.getQuantity() <= 3) {
-                            qLabel.setStyle("-fx-text-fill: #fbc02d;");
-                        } else {
-                            qLabel.setStyle("-fx-text-fill: #388e3c;");
-                        }
-                    }
-                }
-            });
-            card.getChildren().addAll(img, name, price, quantityLabel, addBtn);
-            productGrid.add(card, (i - startIdx) % cols, (i - startIdx) / cols);
+        } catch (Exception ex) {
+            // Return placeholder on any exception
         }
-        if (catalogLoader != null) catalogLoader.setVisible(false);
+        return placeholder;
+    }
+
+    private Label createProductNameLabel(Product product) {
+        Label name = new Label(product.getSku());
+        name.setFont(new Font(14));
+        name.setStyle("-fx-font-weight: bold;");
+        return name;
+    }
+
+    private Label createProductPriceLabel(Product product) {
+        Label price = new Label(String.format("₱%.2f", product.getPrice()));
+        price.setFont(new Font(13));
+        return price;
+    }
+
+    private Label createQuantityLabel(Product product) {
+        Label quantityLabel = new Label("Available: " + product.getQuantity());
+        productQuantityLabels.put(product, quantityLabel);
+        quantityLabel.setFont(new Font(12));
+        updateQuantityLabel(product);
+        return quantityLabel;
+    }
+
+    private Button createAddToCartButton(Product product) {
+        Button addBtn = new Button("+ Add to Cart");
+        addBtn.setStyle(ADD_BUTTON_STYLE);
+        addBtn.setOnAction(e -> addProductToCart(product));
+        return addBtn;
+    }
+
+    // Helper class to hold grid layout information
+    private static class GridLayoutInfo {
+        final int columns;
+        final double cardWidth;
+        final List<Product> displayProducts;
+        final int maxPage;
+        final int startIndex;
+        final int endIndex;
+
+        GridLayoutInfo(int columns, double cardWidth, List<Product> displayProducts, 
+                      int totalProducts, int maxPage, int startIndex, int endIndex) {
+            this.columns = columns;
+            this.cardWidth = cardWidth;
+            this.displayProducts = displayProducts;
+            this.maxPage = maxPage;
+            this.startIndex = startIndex;
+            this.endIndex = endIndex;
+        }
     }
 
     public Map<Product, Label> getProductQuantityLabels() {
