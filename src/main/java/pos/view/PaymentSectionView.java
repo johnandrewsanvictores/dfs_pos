@@ -4,8 +4,10 @@ import javafx.collections.ObservableList;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.scene.text.Font;
+import javafx.geometry.Pos;
 import pos.model.CartItem;
 import pos.model.Product;
+import pos.model.ReturnItem;
 import javafx.geometry.Insets;
 import javafx.collections.ListChangeListener;
 import javafx.stage.Modality;
@@ -64,32 +66,57 @@ public class PaymentSectionView extends VBox {
     private final Label taxSummary = new Label("Tax: ₱0.00");
     private int cachedVatRate = 0;
     private boolean cachedVatEnabled = false;
+    
+    // Returns mode fields
+    private boolean isReturnsMode = false;
+    private ReturnsManager returnsManager = new ReturnsManager();
+    private int lastAuthenticatedSupervisorId = -1;
+    private Runnable onReturnsModeToggle;
+    private VBox normalPaymentSummary;
+    private VBox returnsSummary;
+    
+    // Payment fields references for hiding in returns mode
+    private Label paymentMethodLabel;
+    private ComboBox<String> paymentMethodCombo;
+    private Label amountPaidLabel;
+    private TextField amountPaidField;
+    private Button completePaymentBtn;
+    private Button processReturnsButton; // Reference to the returns button
 
     public PaymentSectionView(ObservableList<CartItem> cart, Product[] products, Runnable onPaymentCompleted, int staffId, String cashierName, Label dateLabel, Label timeLabel) {
         this.staffId = staffId;
         this.cashierName = cashierName;
+        this.returnsManager = new ReturnsManager();
         
         initializeComponent();
         initializePromotionsAndVAT();
         
         // Create UI components
         Label paymentLabel = createPaymentLabel();
-        ComboBox<String> paymentMethod = createPaymentMethodCombo();
-        TextField amountField = createAmountField();
+        processReturnsButton = createProcessReturnsButton(); // Store reference
+        paymentMethodCombo = createPaymentMethodCombo();
+        amountPaidField = createAmountField();
         Label errorLabel = createErrorLabel();
         Label changeLabel = createChangeLabel();
         VBox summaryBox = createSummaryBox();
         VBox dateTimeBox = createDateTimeBox(dateLabel, timeLabel);
-        Button payBtn = createPayButton();
+        completePaymentBtn = createPayButton();
         
-        setupReferenceNumberField(paymentMethod);
+        // Store normal payment summary for later
+        normalPaymentSummary = summaryBox;
+        
+        setupReferenceNumberField(paymentMethodCombo);
         setupCartListeners(summaryBox, cart);
-        setupChangeCalculation(cart, amountField, paymentMethod, changeLabel);
-        setupPaymentHandling(cart, products, onPaymentCompleted, paymentMethod, amountField, errorLabel, payBtn);
+        setupChangeCalculation(cart, amountPaidField, paymentMethodCombo, changeLabel);
+        setupPaymentHandling(cart, products, onPaymentCompleted, paymentMethodCombo, amountPaidField, errorLabel, completePaymentBtn);
         
-        assemblePaymentContent(paymentLabel, paymentMethod, amountField, errorLabel, payBtn, summaryBox, dateTimeBox);
+        assemblePaymentContent(paymentLabel, processReturnsButton, paymentMethodCombo, amountPaidField, errorLabel, completePaymentBtn, summaryBox, dateTimeBox);
         setupOverlayAndLoader();
         setupPeriodicRefresh();
+    }
+    
+    public void setOnReturnsModeToggle(Runnable callback) {
+        this.onReturnsModeToggle = callback;
     }
 
     private void initializeComponent() {
@@ -205,6 +232,191 @@ public class PaymentSectionView extends VBox {
         return payBtn;
     }
 
+    private Button createProcessReturnsButton() {
+        Button processReturnsBtn = new Button("Process Returns");
+        processReturnsBtn.setStyle("-fx-background-color: #d32f2f; -fx-text-fill: white; -fx-font-size: 14px; -fx-background-radius: 5;");
+        processReturnsBtn.setPrefWidth(PAY_BUTTON_WIDTH);
+        VBox.setMargin(processReturnsBtn, new Insets(0, 0, COMPONENT_SPACING, 0));
+        
+        processReturnsBtn.setOnAction(e -> showInvoiceInputDialog());
+        
+        return processReturnsBtn;
+    }
+
+    private void showInvoiceInputDialog() {
+        if (isReturnsMode) {
+            // Cancel returns mode
+            exitReturnsMode();
+        } else {
+            // Enter returns mode
+            TextInputDialog dialog = new TextInputDialog();
+            dialog.setTitle("Process Returns");
+            dialog.setHeaderText("Enter Invoice Number");
+            dialog.setContentText("Invoice No:");
+            
+            // Style the dialog
+            dialog.getDialogPane().setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 14px;");
+            
+            // Show dialog and get result
+            java.util.Optional<String> result = dialog.showAndWait();
+            result.ifPresent(invoiceNo -> {
+                if (invoiceNo.trim().isEmpty()) {
+                    showAlert("Error", "Please enter a valid invoice number.");
+                } else {
+                    processReturn(invoiceNo.trim());
+                }
+            });
+        }
+    }
+
+    private void processReturn(String invoiceNo) {
+        // Try to load the transaction
+        if (returnsManager.loadTransaction(invoiceNo)) {
+            enterReturnsMode();
+        } else {
+            showAlert("Error", "Invoice number '" + invoiceNo + "' not found. Please check the invoice number and try again.");
+        }
+    }
+    
+    private void enterReturnsMode() {
+        isReturnsMode = true;
+        
+        // Update button text and colors first
+        updateButtonsForReturnsMode();
+        
+        // Hide payment fields
+        hidePaymentFields();
+        
+        // Update layout to align button with Payment & Summary (after button text is updated)
+        updatePaymentContentLayout();
+        
+        // Create and show returns summary
+        returnsSummary = returnsManager.createReturnsSummaryBox();
+        
+        // Replace summary in payment content
+        replaceSummaryInPaymentContent(returnsSummary);
+        
+        // Notify parent to hide product catalog and show returns cart
+        if (onReturnsModeToggle != null) {
+            onReturnsModeToggle.run();
+        }
+    }
+    
+    private void exitReturnsMode() {
+        isReturnsMode = false;
+        
+        // Update button text and colors
+        updateButtonsForReturnsMode();
+        
+        // Restore normal layout
+        restoreNormalLayout();
+        
+        // Show payment fields
+        showPaymentFields();
+        
+        // Clear returns data
+        returnsManager.clearReturns();
+        
+        // Restore normal payment summary
+        replaceSummaryInPaymentContent(normalPaymentSummary);
+        
+        // Notify parent to show product catalog and restore normal cart
+        if (onReturnsModeToggle != null) {
+            onReturnsModeToggle.run();
+        }
+    }
+    
+    private void hidePaymentFields() {
+        paymentMethodLabel.setVisible(false);
+        paymentMethodLabel.setManaged(false);
+        paymentMethodCombo.setVisible(false);
+        paymentMethodCombo.setManaged(false);
+        amountPaidLabel.setVisible(false);
+        amountPaidLabel.setManaged(false);
+        amountPaidField.setVisible(false);
+        amountPaidField.setManaged(false);
+    }
+    
+    private void showPaymentFields() {
+        paymentMethodLabel.setVisible(true);
+        paymentMethodLabel.setManaged(true);
+        paymentMethodCombo.setVisible(true);
+        paymentMethodCombo.setManaged(true);
+        amountPaidLabel.setVisible(true);
+        amountPaidLabel.setManaged(true);
+        amountPaidField.setVisible(true);
+        amountPaidField.setManaged(true);
+    }
+    
+    private void updateButtonsForReturnsMode() {
+        // Update the process returns button directly using reference
+        System.out.println("Updating buttons for returns mode. isReturnsMode: " + isReturnsMode);
+        
+        if (processReturnsButton != null) {
+            String newText = isReturnsMode ? "Cancel Returns Mode" : "Process Returns";
+            processReturnsButton.setText(newText);
+            System.out.println("Updated button text to: " + newText);
+            
+            // Update color - orange for cancel, red for process
+            if (isReturnsMode) {
+                processReturnsButton.setStyle("-fx-background-color: #ff9800; -fx-text-fill: white; -fx-font-size: 14px; -fx-background-radius: 5;");
+            } else {
+                processReturnsButton.setStyle("-fx-background-color: #d32f2f; -fx-text-fill: white; -fx-font-size: 14px; -fx-background-radius: 5;");
+            }
+            
+            // Make sure button is visible
+            processReturnsButton.setVisible(true);
+            processReturnsButton.setManaged(true);
+        } else {
+            System.out.println("Warning: processReturnsButton reference is null!");
+        }
+        
+        // Update the complete payment button
+        if (isReturnsMode) {
+            completePaymentBtn.setText("Complete Refund");
+            completePaymentBtn.setStyle("-fx-background-color: #d32f2f; -fx-text-fill: white; -fx-font-size: 15px; -fx-background-radius: 5;");
+        } else {
+            completePaymentBtn.setText("Complete Payment");
+            completePaymentBtn.setStyle(PAY_BUTTON_STYLE);
+        }
+    }
+    
+    private void replaceSummaryInPaymentContent(VBox newSummary) {
+        // Find and replace the summary box in payment content
+        for (int i = 0; i < paymentContent.getChildren().size(); i++) {
+            if (paymentContent.getChildren().get(i) instanceof VBox) {
+                VBox vbox = (VBox) paymentContent.getChildren().get(i);
+                // Check if this is a summary box by looking for summary labels
+                if (!vbox.getChildren().isEmpty() && 
+                    vbox.getChildren().get(0) instanceof Label) {
+                    Label firstLabel = (Label) vbox.getChildren().get(0);
+                    if (firstLabel.getText().contains("Subtotal") || 
+                        firstLabel.getText().contains("Original Subtotal")) {
+                        paymentContent.getChildren().set(i, newSummary);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    public boolean isInReturnsMode() {
+        return isReturnsMode;
+    }
+    
+    public TableView<?> getReturnsTable() {
+        return isReturnsMode ? returnsManager.createReturnsTableView() : null;
+    }
+
+    private void showAlert(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        alert.getDialogPane().setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 14px;");
+        alert.showAndWait();
+    }
+
     private void setupReferenceNumberField(ComboBox<String> paymentMethod) {
         Label refNoLabel = new Label("Reference Number");
         refNoField.setPromptText("Enter E-Wallet Reference Number");
@@ -290,25 +502,330 @@ public class PaymentSectionView extends VBox {
     private void setupPaymentHandling(ObservableList<CartItem> cart, Product[] products, 
                                     Runnable onPaymentCompleted, ComboBox<String> paymentMethod, 
                                     TextField amountField, Label errorLabel, Button payBtn) {
-        payBtn.setOnAction(e -> runPaymentTask(cart, products, onPaymentCompleted, 
-                                             staffId, this.cashierName, paymentMethod, 
-                                             amountField, errorLabel, null, payBtn));
-        amountField.setOnAction(e -> runPaymentTask(cart, products, onPaymentCompleted, 
-                                                  staffId, this.cashierName, paymentMethod, 
-                                                  amountField, errorLabel, null, payBtn));
+        payBtn.setOnAction(e -> {
+            if (isReturnsMode) {
+                handleRefundProcess();
+            } else {
+                runPaymentTask(cart, products, onPaymentCompleted, 
+                             staffId, this.cashierName, paymentMethod, 
+                             amountField, errorLabel, null, payBtn);
+            }
+        });
+        
+        amountField.setOnAction(e -> {
+            if (!isReturnsMode) {
+                runPaymentTask(cart, products, onPaymentCompleted, 
+                              staffId, this.cashierName, paymentMethod, 
+                              amountField, errorLabel, null, payBtn);
+            }
+        });
+    }
+    
+    private void handleRefundProcess() {
+        // Step 1: Validate that there are items to refund
+        if (!validateRefundItems()) {
+            return;
+        }
+        
+        // Step 2: Request supervisor authorization
+        if (!requestSupervisorAuthorization()) {
+            return;
+        }
+        
+        // Step 3: Show confirmation dialog
+        if (!showRefundConfirmation()) {
+            return;
+        }
+        
+        // Step 4: Process the refund and exit returns mode
+        processRefund();
+    }
+    
+    private boolean validateRefundItems() {
+        ReturnsManager.ReturnsSummary summary = returnsManager.calculateReturnsSummary();
+        
+        if (summary.refundItems <= 0) {
+            showAlert("No Items to Refund", "Please select items to return by using the + button in the Action column.");
+            return false;
+        }
+        
+        if (summary.refundTotal <= 0) {
+            showAlert("Invalid Refund Amount", "The refund total must be greater than ₱0.00");
+            return false;
+        }
+        
+        return true;
+    }
+    
+    private boolean requestSupervisorAuthorization() {
+        SupervisorAuthDialog.SupervisorAuthResult result = 
+            SupervisorAuthDialog.requestSupervisorAuthorizationWithId();
+        
+        if (result.isSuccessful()) {
+            lastAuthenticatedSupervisorId = result.getSupervisorId();
+            return true;
+        }
+        
+        return false;
+    }
+    
+    private boolean showRefundConfirmation() {
+        ReturnsManager.ReturnsSummary summary = returnsManager.calculateReturnsSummary();
+        
+        Alert confirmationDialog = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmationDialog.setTitle("Confirm Refund");
+        confirmationDialog.setHeaderText("Process Refund - Invoice #" + returnsManager.getInvoiceNumber());
+        
+        String confirmationText = String.format(
+            "Refund Details:\n" +
+            "• Items Refund: ₱%.2f\n" +
+            "• Total Refund: ₱%.2f\n\n" +
+            "The refund will be processed as CASH.\n\n" +
+            "Do you want to proceed with this refund?",
+            summary.refundItems, summary.refundTotal
+        );
+        
+        confirmationDialog.setContentText(confirmationText);
+        confirmationDialog.getDialogPane().setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 14px;");
+        
+        // Customize buttons
+        confirmationDialog.getButtonTypes().setAll(ButtonType.YES, ButtonType.NO);
+        Button yesButton = (Button) confirmationDialog.getDialogPane().lookupButton(ButtonType.YES);
+        Button noButton = (Button) confirmationDialog.getDialogPane().lookupButton(ButtonType.NO);
+        
+        yesButton.setText("Process Refund");
+        yesButton.setStyle("-fx-background-color: #d32f2f; -fx-text-fill: white;");
+        noButton.setText("Cancel");
+        
+        java.util.Optional<ButtonType> result = confirmationDialog.showAndWait();
+        return result.isPresent() && result.get() == ButtonType.YES;
+    }
+    
+    private void processRefund() {
+        // Show loading overlay
+        Platform.runLater(() -> overlay.setVisible(true));
+        
+        // Process refund in background thread for better performance
+        javafx.concurrent.Task<Boolean> refundTask = new javafx.concurrent.Task<Boolean>() {
+            private String errorMessage = "";
+            
+            @Override
+            protected Boolean call() throws Exception {
+                try {
+                    // Get current cashier and supervisor IDs
+                    int currentCashierId = staffId;
+                    
+                    // Get supervisor ID from authentication (you'll need to store this)
+                    // For now, we'll get it from the last supervisor authentication
+                    int supervisorId = getLastAuthenticatedSupervisorId();
+                    if (supervisorId <= 0) {
+                        errorMessage = "Supervisor authentication required";
+                        return false;
+                    }
+                    
+                    // Prepare return transaction data
+                    ReturnsManager.ReturnsSummary summary = returnsManager.calculateReturnsSummary();
+                    String invoiceNo = returnsManager.getInvoiceNumber();
+                    
+                    // Build return items data
+                    List<pos.db.ReturnsDAO.ReturnItemData> returnItemsData = new ArrayList<>();
+                    for (ReturnItem item : returnsManager.getReturnItems()) {
+                        if (item.getQtyToReturn() > 0) {
+                            returnItemsData.add(new pos.db.ReturnsDAO.ReturnItemData(
+                                item.getInvoiceItemId(),
+                                item.getOnlineInventoryItemId() > 0 ? item.getOnlineInventoryItemId() : null,
+                                item.getInStoreInventoryId() > 0 ? item.getInStoreInventoryId() : null,
+                                item.getQtyToReturn(),
+                                java.math.BigDecimal.valueOf(item.getRefundAmount())
+                            ));
+                        }
+                    }
+                    
+                    if (returnItemsData.isEmpty()) {
+                        errorMessage = "No items selected for return";
+                        return false;
+                    }
+                    
+                    // Create return transaction data
+                    pos.db.ReturnsDAO.ReturnTransactionData transactionData = 
+                        new pos.db.ReturnsDAO.ReturnTransactionData(
+                            invoiceNo,
+                            currentCashierId,
+                            supervisorId,
+                            java.math.BigDecimal.valueOf(summary.refundTotal),
+                            "Customer return processed via POS system",
+                            returnItemsData
+                        );
+                    
+                    // Validate data
+                    String validationError = pos.db.ReturnsDAO.validateReturnData(transactionData);
+                    if (validationError != null) {
+                        errorMessage = validationError;
+                        return false;
+                    }
+                    
+                    // Process the return transaction atomically
+                    int returnId = pos.db.ReturnsDAO.processReturnTransaction(transactionData);
+                    if (returnId > 0) {
+                        return true;
+                    } else {
+                        errorMessage = "Failed to process return transaction";
+                        return false;
+                    }
+                    
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    errorMessage = "Error processing refund: " + e.getMessage();
+                    return false;
+                }
+            }
+            
+            @Override
+            protected void succeeded() {
+                Platform.runLater(() -> {
+                    overlay.setVisible(false);
+                    if (getValue()) {
+                        // Success - show confirmation
+                        ReturnsManager.ReturnsSummary summary = returnsManager.calculateReturnsSummary();
+                        
+                        Alert successAlert = new Alert(Alert.AlertType.INFORMATION);
+                        successAlert.setTitle("Refund Processed");
+                        successAlert.setHeaderText("Refund Completed Successfully");
+                        successAlert.setContentText(String.format(
+                            "Refund processed for Invoice #%s\n" +
+                            "Refund Amount: ₱%.2f\n" +
+                            "Payment Method: CASH\n\n" +
+                            "Inventory has been updated.\n" +
+                            "Please provide cash refund to the customer.",
+                            returnsManager.getInvoiceNumber(), summary.refundTotal
+                        ));
+                        successAlert.getDialogPane().setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 14px;");
+                        successAlert.showAndWait();
+                        
+                        // Exit returns mode
+                        exitReturnsMode();
+                    } else {
+                        // Failed - show error
+                        Alert errorAlert = new Alert(Alert.AlertType.ERROR);
+                        errorAlert.setTitle("Refund Failed");
+                        errorAlert.setHeaderText("Unable to Process Refund");
+                        errorAlert.setContentText(errorMessage);
+                        errorAlert.getDialogPane().setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 14px;");
+                        errorAlert.showAndWait();
+                    }
+                });
+            }
+            
+            @Override
+            protected void failed() {
+                Platform.runLater(() -> {
+                    overlay.setVisible(false);
+                    Alert errorAlert = new Alert(Alert.AlertType.ERROR);
+                    errorAlert.setTitle("Refund Failed");
+                    errorAlert.setHeaderText("System Error");
+                    errorAlert.setContentText("An unexpected error occurred while processing the refund. Please try again.");
+                    errorAlert.getDialogPane().setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 14px;");
+                    errorAlert.showAndWait();
+                });
+            }
+        };
+        
+        // Run the task in background thread
+        new Thread(refundTask).start();
+    }
+    
+    private int getLastAuthenticatedSupervisorId() {
+        return lastAuthenticatedSupervisorId;
+    }
+    
+    public void setLastAuthenticatedSupervisorId(int supervisorId) {
+        this.lastAuthenticatedSupervisorId = supervisorId;
     }
 
-    private void assemblePaymentContent(Label paymentLabel, ComboBox<String> paymentMethod, 
+    private void assemblePaymentContent(Label paymentLabel, Button processReturnsBtn, ComboBox<String> paymentMethod, 
                                       TextField amountField, Label errorLabel, 
                                       Button payBtn, VBox summaryBox, VBox dateTimeBox) {
-        Label paymentMethodLabel = new Label("Payment Method:");
-        Label amountPaidLabel = new Label("Amount Paid");
+        paymentMethodLabel = new Label("Payment Method:");
+        amountPaidLabel = new Label("Amount Paid");
         
         paymentContent.getChildren().addAll(
-            paymentLabel, paymentMethodLabel, paymentMethod, 
+            paymentLabel, processReturnsBtn, paymentMethodLabel, paymentMethod, 
             amountPaidLabel, amountField, payBtn, errorLabel, summaryBox, dateTimeBox
         );
         paymentContent.setSpacing(COMPONENT_SPACING);
+    }
+    
+    private void updatePaymentContentLayout() {
+        if (isReturnsMode) {
+            // Simple approach: Create a horizontal header box and insert it after Payment & Summary label
+            HBox headerBox = new HBox();
+            Label paymentLabel = new Label("Payment & Summary");
+            paymentLabel.getStyleClass().add("section-title");
+            
+            // Ensure the button is visible and has correct text
+            processReturnsButton.setText("Cancel Returns Mode");
+            processReturnsButton.setVisible(true);
+            processReturnsButton.setManaged(true);
+            
+            // Create spacer to push button to right
+            HBox spacer = new HBox();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+            
+            headerBox.getChildren().addAll(paymentLabel, spacer, processReturnsButton);
+            headerBox.setAlignment(Pos.CENTER_LEFT);
+            
+            // Find and replace the original Payment & Summary label
+            for (int i = 0; i < paymentContent.getChildren().size(); i++) {
+                javafx.scene.Node node = paymentContent.getChildren().get(i);
+                if (node instanceof Label && ((Label) node).getText().equals("Payment & Summary")) {
+                    paymentContent.getChildren().set(i, headerBox);
+                    VBox.setMargin(headerBox, new Insets(0, 0, COMPONENT_SPACING, 0));
+                    break;
+                }
+            }
+            
+            // Remove the standalone button if it still exists separately
+            paymentContent.getChildren().removeIf(node -> 
+                node instanceof Button && node != processReturnsButton && 
+                ((Button) node).getText().equals("Cancel Returns Mode")
+            );
+            
+            System.out.println("Updated payment content layout. Cancel Returns Mode button should be visible.");
+        }
+    }
+    
+    private void restoreNormalLayout() {
+        // Restore the normal layout: Payment & Summary label at top, then Process Returns button below
+        System.out.println("Restoring normal payment layout.");
+        
+        // Find and replace the header box with just the label
+        for (int i = 0; i < paymentContent.getChildren().size(); i++) {
+            javafx.scene.Node node = paymentContent.getChildren().get(i);
+            if (node instanceof HBox) {
+                // Check if this HBox contains our Payment & Summary label
+                HBox hbox = (HBox) node;
+                for (javafx.scene.Node child : hbox.getChildren()) {
+                    if (child instanceof Label && ((Label) child).getText().equals("Payment & Summary")) {
+                        // Replace HBox with just the label
+                        Label paymentLabel = new Label("Payment & Summary");
+                        paymentLabel.getStyleClass().add("section-title");
+                        paymentContent.getChildren().set(i, paymentLabel);
+                        VBox.setMargin(paymentLabel, new Insets(0, 0, COMPONENT_SPACING, 0));
+                        
+                        // Make sure the process returns button is in its proper position (after the label)
+                        if (!paymentContent.getChildren().contains(processReturnsButton)) {
+                            paymentContent.getChildren().add(i + 1, processReturnsButton);
+                        }
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+        
+        // Ensure button is visible and in correct position
+        processReturnsButton.setVisible(true);
+        processReturnsButton.setManaged(true);
     }
 
     private void setupOverlayAndLoader() {

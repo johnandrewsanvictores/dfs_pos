@@ -87,6 +87,10 @@ public class POSView extends BorderPane {
             productCatalog = new ProductCatalogView(products, cart); // Store reference
             CartView cartView = new CartView(cart, productCatalog.getProductQuantityLabels());
             PaymentSectionView paymentSection = new PaymentSectionView(cart, products, productCatalog::refreshAfterCheckout, staffId, cashierName, dateLabel, timeLabel);
+            
+            // Set up returns mode toggle
+            paymentSection.setOnReturnsModeToggle(() -> toggleReturnsMode(paymentSection, cartView));
+            
             mainContent.getChildren().addAll(productCatalog, cartView, paymentSection);
             HBox.setHgrow(productCatalog, Priority.ALWAYS);
             HBox.setHgrow(cartView, Priority.ALWAYS);
@@ -315,5 +319,54 @@ public class POSView extends BorderPane {
             e -> setTop(buildHeader()) // Restore original header
         ));
         hideNotification.play();
+    }
+    
+    private void toggleReturnsMode(PaymentSectionView paymentSection, CartView cartView) {
+        if (paymentSection.isInReturnsMode()) {
+            // Entering returns mode - hide product catalog, show returns cart
+            if (mainContent.getChildren().contains(productCatalog)) {
+                mainContent.getChildren().remove(productCatalog);
+            }
+            
+            // Get returns table and replace cart view
+            TableView<?> returnsTable = paymentSection.getReturnsTable();
+            if (returnsTable != null) {
+                // Create a wrapper with clean light background
+                VBox returnsWrapper = new VBox();
+                returnsWrapper.getChildren().add(returnsTable);
+                returnsWrapper.setStyle("-fx-background-color: #f9f9f9; -fx-padding: 5; -fx-background-radius: 5;");
+                
+                // Make table fill the wrapper
+                VBox.setVgrow(returnsTable, Priority.ALWAYS);
+                
+                // Replace cart view with returns table
+                int cartIndex = mainContent.getChildren().indexOf(cartView);
+                if (cartIndex != -1) {
+                    mainContent.getChildren().set(cartIndex, returnsWrapper);
+                }
+                
+                // Update growth properties
+                HBox.setHgrow(returnsWrapper, Priority.ALWAYS);
+            }
+        } else {
+            // Exiting returns mode - restore product catalog and normal cart
+            // Find returns table wrapper and replace with cart view
+            for (int i = 0; i < mainContent.getChildren().size(); i++) {
+                if (mainContent.getChildren().get(i) instanceof VBox) {
+                    VBox vbox = (VBox) mainContent.getChildren().get(i);
+                    if (vbox.getStyle().contains("#f9f9f9")) { // Returns wrapper
+                        mainContent.getChildren().set(i, cartView);
+                        HBox.setHgrow(cartView, Priority.ALWAYS);
+                        break;
+                    }
+                }
+            }
+            
+            // Add back product catalog if not present
+            if (!mainContent.getChildren().contains(productCatalog)) {
+                mainContent.getChildren().add(0, productCatalog);
+                HBox.setHgrow(productCatalog, Priority.ALWAYS);
+            }
+        }
     }
 } 
