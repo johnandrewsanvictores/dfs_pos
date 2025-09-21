@@ -611,6 +611,7 @@ public class PaymentSectionView extends VBox {
         // Process refund in background thread for better performance
         javafx.concurrent.Task<Boolean> refundTask = new javafx.concurrent.Task<Boolean>() {
             private String errorMessage = "";
+            private pos.db.ReturnsDAO.ReturnTransactionResult returnResult = null;
             
             @Override
             protected Boolean call() throws Exception {
@@ -667,9 +668,11 @@ public class PaymentSectionView extends VBox {
                         return false;
                     }
                     
-                    // Process the return transaction atomically
-                    int returnId = pos.db.ReturnsDAO.processReturnTransaction(transactionData);
-                    if (returnId > 0) {
+                    // Process the return transaction atomically with return number generation
+                    pos.db.ReturnsDAO.ReturnTransactionResult returnResult = pos.db.ReturnsDAO.processReturnTransactionWithReturnNo(transactionData);
+                    if (returnResult != null && returnResult.returnId > 0) {
+                        // Store the return result for later use in the success callback
+                        this.returnResult = returnResult;
                         return true;
                     } else {
                         errorMessage = "Failed to process return transaction";
@@ -688,25 +691,40 @@ public class PaymentSectionView extends VBox {
                 Platform.runLater(() -> {
                     overlay.setVisible(false);
                     if (getValue()) {
-                        // Success - show confirmation
+                        // Success - show return receipt and confirmation
                         ReturnsManager.ReturnsSummary summary = returnsManager.calculateReturnsSummary();
+                        String originalInvoiceNo = returnsManager.getInvoiceNumber();
                         
-                        Alert successAlert = new Alert(Alert.AlertType.INFORMATION);
-                        successAlert.setTitle("Refund Processed");
-                        successAlert.setHeaderText("Refund Completed Successfully");
-                        successAlert.setContentText(String.format(
-                            "Refund processed for Invoice #%s\n" +
-                            "Refund Amount: ₱%.2f\n" +
-                            "Payment Method: CASH\n\n" +
-                            "Inventory has been updated.\n" +
-                            "Please provide cash refund to the customer.",
-                            returnsManager.getInvoiceNumber(), summary.refundTotal
-                        ));
-                        successAlert.getDialogPane().setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 14px;");
-                        successAlert.showAndWait();
+                        // Show return receipt
+                        pos.view.ReturnReceiptDialog.show(
+                            returnResult, 
+                            new ArrayList<>(returnsManager.getReturnItems()),
+                            originalInvoiceNo,
+                            cashierName,
+                            () -> {
+                                // After receipt is shown, display success message
+                                Platform.runLater(() -> {
+                                    Alert successAlert = new Alert(Alert.AlertType.INFORMATION);
+                                    successAlert.setTitle("Refund Processed");
+                                    successAlert.setHeaderText("Refund Completed Successfully");
+                                    successAlert.setContentText(String.format(
+                                        "Return Number: %s\n" +
+                                        "Original Invoice: %s\n" +
+                                        "Refund Amount: ₱%.2f\n" +
+                                        "Payment Method: CASH\n\n" +
+                                        "Inventory has been updated.\n" +
+                                        "Please provide cash refund to the customer.",
+                                        returnResult.returnNo, originalInvoiceNo, summary.refundTotal
+                                    ));
+                                    successAlert.getDialogPane().setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 14px;");
+                                    successAlert.showAndWait();
+                                    
+                                    // Exit returns mode
+                                    exitReturnsMode();
+                                });
+                            }
+                        );
                         
-                        // Exit returns mode
-                        exitReturnsMode();
                     } else {
                         // Failed - show error
                         Alert errorAlert = new Alert(Alert.AlertType.ERROR);

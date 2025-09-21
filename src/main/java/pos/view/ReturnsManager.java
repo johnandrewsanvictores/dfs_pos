@@ -174,15 +174,41 @@ public class ReturnsManager {
             .mapToDouble(ReturnItem::getRefundAmount)
             .sum();
         
-        double refundTotal = refundItems;
+        // Calculate proportional tax for returned items only
+        double proportionalTax = calculateProportionalTax(refundItems);
+        
+        double refundTotal = refundItems + proportionalTax;
         
         return new ReturnsSummary(
             originalSubtotal,
             originalDiscount,
-            originalTax,
+            proportionalTax, // Use proportional tax instead of original tax
             refundItems,
             refundTotal
         );
+    }
+    
+    /**
+     * Calculate proportional tax for returned items
+     * If original transaction had tax, calculate the proportional amount for returned items
+     */
+    private double calculateProportionalTax(double refundItemsAmount) {
+        if (originalTax <= 0 || originalSubtotal <= 0) {
+            return 0.0; // No tax to calculate
+        }
+        
+        // Calculate the tax rate from original transaction
+        // Tax is applied to (subtotal - discount), so we need to calculate the base amount
+        double originalTaxableAmount = originalSubtotal - originalDiscount;
+        if (originalTaxableAmount <= 0) {
+            return 0.0;
+        }
+        
+        double taxRate = originalTax / originalTaxableAmount;
+        
+        // Apply the same tax rate to the returned items
+        // refundItemsAmount already includes the item-level discounts
+        return refundItemsAmount * taxRate;
     }
     
     public TableView<ReturnItem> createReturnsTableView() {

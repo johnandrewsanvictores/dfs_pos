@@ -43,6 +43,52 @@ public class ReturnsDAO {
      * @return Validation result with error message if invalid
      * @throws SQLException if database error occurs
      */
+    /**
+     * Data class to hold original invoice/transaction data for return receipt generation
+     */
+    public static class InvoiceData {
+        public final double subtotal;
+        public final double discount;
+        public final double tax;
+        public final String customerName;
+        public final java.sql.Timestamp transactionDate;
+        
+        public InvoiceData(double subtotal, double discount, double tax, String customerName, java.sql.Timestamp transactionDate) {
+            this.subtotal = subtotal;
+            this.discount = discount;
+            this.tax = tax;
+            this.customerName = customerName;
+            this.transactionDate = transactionDate;
+        }
+    }
+    
+    /**
+     * Get original transaction data for return receipt generation
+     */
+    public static InvoiceData getInvoiceData(Connection conn, String invoiceNo) throws SQLException {
+        String query = "SELECT subtotal, discount, tax, customer_name, transaction_date FROM pos_transactions WHERE invoice_no = ?";
+        PreparedStatement stmt = conn.prepareStatement(query);
+        stmt.setString(1, invoiceNo);
+        ResultSet rs = stmt.executeQuery();
+        
+        if (rs.next()) {
+            InvoiceData data = new InvoiceData(
+                rs.getDouble("subtotal"),
+                rs.getDouble("discount"),
+                rs.getDouble("tax"),
+                rs.getString("customer_name"),
+                rs.getTimestamp("transaction_date")
+            );
+            rs.close();
+            stmt.close();
+            return data;
+        }
+        
+        rs.close();
+        stmt.close();
+        return null;
+    }
+    
     public static InvoiceValidationResult validateInvoiceForReturns(Connection conn, String invoiceNo) throws SQLException {
         // 1. Check if invoice exists and get transaction date
         String checkInvoiceQuery = "SELECT id, transaction_date FROM pos_transactions WHERE invoice_no = ?";
@@ -131,39 +177,83 @@ public class ReturnsDAO {
     }
     
     /**
-     * Process complete return transaction atomically
+     * Generate the next return number in the format RTN-XXXXXX
+     * @param conn Database connection
+     * @return Next return number
+     * @throws SQLException if database error occurs
+     */
+    public static String generateNextReturnNo(Connection conn) throws SQLException {
+        String sql = "SELECT return_no FROM pos_returns ORDER BY return_id DESC LIMIT 1";
+        PreparedStatement stmt = conn.prepareStatement(sql);
+        ResultSet rs = stmt.executeQuery();
+        int next = 1;
+        if (rs.next()) {
+            String last = rs.getString("return_no");
+            try {
+                // Extract number from RTN-XXXXXX format
+                String numberPart = last.substring(4);
+                next = Integer.parseInt(numberPart) + 1;
+            } catch (Exception ignored) {}
+        }
+        rs.close();
+        stmt.close();
+        return String.format("RTN-%06d", next); // 6 digits, leading zeros
+    }
+
+    /**
+     * Data class to represent the complete return transaction with return number
+     */
+    public static class ReturnTransactionResult {
+        public final int returnId;
+        public final String returnNo;
+        public final BigDecimal refundTotal;
+        public final List<ReturnItemData> returnItems;
+        
+        public ReturnTransactionResult(int returnId, String returnNo, BigDecimal refundTotal, List<ReturnItemData> returnItems) {
+            this.returnId = returnId;
+            this.returnNo = returnNo;
+            this.refundTotal = refundTotal;
+            this.returnItems = returnItems;
+        }
+    }
+
+    /**
+     * Process complete return transaction atomically with return number generation
      * @param returnData Complete return transaction data
-     * @return Return ID if successful, -1 if failed
+     * @return ReturnTransactionResult with return ID and number if successful, null if failed
      * @throws SQLException if database operation fails
      */
-    public static int processReturnTransaction(ReturnTransactionData returnData) throws SQLException {
+    public static ReturnTransactionResult processReturnTransactionWithReturnNo(ReturnTransactionData returnData) throws SQLException {
         Connection conn = null;
         try {
             conn = DBConnection.getConnection();
             conn.setAutoCommit(false); // Start transaction
             
-            // 1. Insert main return record
-            int returnId = insertReturn(conn, returnData);
+            // 1. Generate return number
+            String returnNo = generateNextReturnNo(conn);
+            
+            // 2. Insert main return record with return number
+            int returnId = insertReturnWithReturnNo(conn, returnData, returnNo);
             if (returnId == -1) {
                 throw new SQLException("Failed to insert return record");
             }
             
-            // 2. Insert all return items
+            // 3. Insert all return items
             insertReturnItems(conn, returnId, returnData.returnItems);
             
-            // 3. Update inventory quantities (increase stock)
+            // 4. Update inventory quantities (increase stock)
             updateInventoryQuantities(conn, returnData.returnItems);
             
-            // 4. Log supervisor authorization activity
+            // 5. Log supervisor authorization activity
             logReturnAuthorization(conn, returnData.supervisorId, returnData.invoiceNo, 
                                  returnData.refundTotal, returnData.cashierId);
             
-            // 5. Log cashier return processing activity
+            // 6. Log cashier return processing activity
             logReturnProcessing(conn, returnData.cashierId, returnData.invoiceNo, 
                               returnData.refundTotal, returnData.supervisorId);
             
             conn.commit(); // All operations successful
-            return returnId;
+            return new ReturnTransactionResult(returnId, returnNo, returnData.refundTotal, returnData.returnItems);
             
         } catch (SQLException e) {
             if (conn != null) {
@@ -188,7 +278,36 @@ public class ReturnsDAO {
     }
     
     /**
-     * Insert main return record
+     * Insert main return record with return number
+     */
+    private static int insertReturnWithReturnNo(Connection conn, ReturnTransactionData returnData, String returnNo) throws SQLException {
+        String sql = "INSERT INTO pos_returns (return_no, invoice_no, cashier_id, supervisor_id, refund_total, refund_method, notes) " +
+                    "VALUES (?, ?, ?, ?, ?, 'Cash', ?)";
+        
+        try (PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            stmt.setString(1, returnNo);
+            stmt.setString(2, returnData.invoiceNo);
+            stmt.setInt(3, returnData.cashierId);
+            stmt.setInt(4, returnData.supervisorId);
+            stmt.setBigDecimal(5, returnData.refundTotal);
+            stmt.setString(6, returnData.notes);
+            
+            int affectedRows = stmt.executeUpdate();
+            if (affectedRows == 0) {
+                return -1;
+            }
+            
+            try (ResultSet rs = stmt.getGeneratedKeys()) {
+                if (rs.next()) {
+                    return rs.getInt(1);
+                }
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Insert main return record (deprecated - use insertReturnWithReturnNo instead)
      */
     private static int insertReturn(Connection conn, ReturnTransactionData returnData) throws SQLException {
         String sql = "INSERT INTO pos_returns (invoice_no, cashier_id, supervisor_id, refund_total, refund_method, notes) " +
