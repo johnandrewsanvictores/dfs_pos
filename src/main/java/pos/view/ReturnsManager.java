@@ -42,13 +42,50 @@ public class ReturnsManager {
         // Initialize with empty data
     }
     
-    public boolean loadTransaction(String invoiceNo) {
+    public InvoiceLoadResult loadTransaction(String invoiceNo) {
         try {
             this.invoiceNumber = invoiceNo;
-            return fetchTransactionData(invoiceNo);
+            
+            // First validate the invoice
+            try (Connection conn = DBConnection.getConnection()) {
+                pos.db.ReturnsDAO.InvoiceValidationResult validation = pos.db.ReturnsDAO.validateInvoiceForReturns(conn, invoiceNo);
+                
+                if (!validation.isValid) {
+                    return InvoiceLoadResult.failure(validation.errorMessage);
+                }
+                
+                // If validation passed, fetch the transaction data
+                boolean success = fetchTransactionData(invoiceNo);
+                if (success) {
+                    return InvoiceLoadResult.success();
+                } else {
+                    return InvoiceLoadResult.failure("Failed to load transaction data for invoice '" + invoiceNo + "'.");
+                }
+            }
         } catch (Exception e) {
             e.printStackTrace();
-            return false;
+            return InvoiceLoadResult.failure("An error occurred while loading the invoice: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Result class for invoice loading operations
+     */
+    public static class InvoiceLoadResult {
+        public final boolean success;
+        public final String errorMessage;
+        
+        private InvoiceLoadResult(boolean success, String errorMessage) {
+            this.success = success;
+            this.errorMessage = errorMessage;
+        }
+        
+        public static InvoiceLoadResult success() {
+            return new InvoiceLoadResult(true, null);
+        }
+        
+        public static InvoiceLoadResult failure(String errorMessage) {
+            return new InvoiceLoadResult(false, errorMessage);
         }
     }
     

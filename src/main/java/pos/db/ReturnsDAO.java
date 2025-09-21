@@ -16,6 +16,79 @@ import java.util.Map;
 public class ReturnsDAO {
     
     /**
+     * Result class for invoice validation
+     */
+    public static class InvoiceValidationResult {
+        public final boolean isValid;
+        public final String errorMessage;
+        
+        public InvoiceValidationResult(boolean isValid, String errorMessage) {
+            this.isValid = isValid;
+            this.errorMessage = errorMessage;
+        }
+        
+        public static InvoiceValidationResult valid() {
+            return new InvoiceValidationResult(true, null);
+        }
+        
+        public static InvoiceValidationResult invalid(String errorMessage) {
+            return new InvoiceValidationResult(false, errorMessage);
+        }
+    }
+    
+    /**
+     * Validates if an invoice number can be processed for returns
+     * @param conn Database connection
+     * @param invoiceNo Invoice number to validate
+     * @return Validation result with error message if invalid
+     * @throws SQLException if database error occurs
+     */
+    public static InvoiceValidationResult validateInvoiceForReturns(Connection conn, String invoiceNo) throws SQLException {
+        // 1. Check if invoice exists and get transaction date
+        String checkInvoiceQuery = "SELECT id, transaction_date FROM pos_transactions WHERE invoice_no = ?";
+        PreparedStatement stmt = conn.prepareStatement(checkInvoiceQuery);
+        stmt.setString(1, invoiceNo);
+        ResultSet rs = stmt.executeQuery();
+        
+        if (!rs.next()) {
+            rs.close();
+            stmt.close();
+            return InvoiceValidationResult.invalid("Invoice number '" + invoiceNo + "' not found. Please check the invoice number and try again.");
+        }
+        
+        int posTransactionId = rs.getInt("id");
+        java.sql.Timestamp transactionDate = rs.getTimestamp("transaction_date");
+        rs.close();
+        stmt.close();
+        
+        // 2. Check if transaction is not more than 7 days old
+        long currentTime = System.currentTimeMillis();
+        long transactionTime = transactionDate.getTime();
+        long daysDifference = (currentTime - transactionTime) / (1000 * 60 * 60 * 24);
+        
+        if (daysDifference > 7) {
+            return InvoiceValidationResult.invalid("Invoice '" + invoiceNo + "' is more than 7 days old and cannot be returned. Returns are only allowed within 7 days of purchase.");
+        }
+        
+        // 3. Check if invoice has already been processed for returns
+        String checkReturnsQuery = "SELECT COUNT(*) as return_count FROM pos_returns WHERE invoice_no = ?";
+        PreparedStatement returnsStmt = conn.prepareStatement(checkReturnsQuery);
+        returnsStmt.setString(1, invoiceNo);
+        ResultSet returnsRs = returnsStmt.executeQuery();
+        
+        if (returnsRs.next() && returnsRs.getInt("return_count") > 0) {
+            returnsRs.close();
+            returnsStmt.close();
+            return InvoiceValidationResult.invalid("Invoice '" + invoiceNo + "' has already been processed for returns. Each invoice can only be returned once.");
+        }
+        
+        returnsRs.close();
+        returnsStmt.close();
+        
+        return InvoiceValidationResult.valid();
+    }
+    
+    /**
      * Data class to represent a return item for processing
      */
     public static class ReturnItemData {
@@ -196,7 +269,7 @@ public class ReturnsDAO {
         String onlineUpdateSql = "UPDATE online_product_variant SET quantity = quantity + ? WHERE id = ?";
         
         // Batch update for in-store inventory  
-        String inStoreUpdateSql = "UPDATE in_store_product_variant SET quantity = quantity + ? WHERE id = ?";
+        String inStoreUpdateSql = "UPDATE in_store_product_details SET quantity = quantity + ? WHERE id = ?";
         
         try (PreparedStatement onlineStmt = conn.prepareStatement(onlineUpdateSql);
              PreparedStatement inStoreStmt = conn.prepareStatement(inStoreUpdateSql)) {

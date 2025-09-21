@@ -80,6 +80,7 @@ public class PaymentSectionView extends VBox {
     private ComboBox<String> paymentMethodCombo;
     private Label amountPaidLabel;
     private TextField amountPaidField;
+    private Label changeLabel; // Add changeLabel as a field
     private Button completePaymentBtn;
     private Button processReturnsButton; // Reference to the returns button
 
@@ -97,7 +98,7 @@ public class PaymentSectionView extends VBox {
         paymentMethodCombo = createPaymentMethodCombo();
         amountPaidField = createAmountField();
         Label errorLabel = createErrorLabel();
-        Label changeLabel = createChangeLabel();
+        changeLabel = createChangeLabel(); // Store in field instead of local variable
         VBox summaryBox = createSummaryBox();
         VBox dateTimeBox = createDateTimeBox(dateLabel, timeLabel);
         completePaymentBtn = createPayButton();
@@ -106,7 +107,7 @@ public class PaymentSectionView extends VBox {
         normalPaymentSummary = summaryBox;
         
         setupReferenceNumberField(paymentMethodCombo);
-        setupCartListeners(summaryBox, cart);
+        setupCartListeners(summaryBox, cart, changeLabel);
         setupChangeCalculation(cart, amountPaidField, paymentMethodCombo, changeLabel);
         setupPaymentHandling(cart, products, onPaymentCompleted, paymentMethodCombo, amountPaidField, errorLabel, completePaymentBtn);
         
@@ -270,11 +271,13 @@ public class PaymentSectionView extends VBox {
     }
 
     private void processReturn(String invoiceNo) {
-        // Try to load the transaction
-        if (returnsManager.loadTransaction(invoiceNo)) {
+        // Try to load the transaction with validation
+        ReturnsManager.InvoiceLoadResult result = returnsManager.loadTransaction(invoiceNo);
+        
+        if (result.success) {
             enterReturnsMode();
         } else {
-            showAlert("Error", "Invoice number '" + invoiceNo + "' not found. Please check the invoice number and try again.");
+            showAlert("Error", result.errorMessage);
         }
     }
     
@@ -880,14 +883,13 @@ public class PaymentSectionView extends VBox {
         return taxableAmount * cachedVatRate / 100.0;
     }
 
-    private void setupCartListeners(VBox summaryBox, ObservableList<CartItem> cart) {
+    private void setupCartListeners(VBox summaryBox, ObservableList<CartItem> cart, Label changeLabel) {
         // Extract the summary labels from summaryBox
         Label subtotalSummary = (Label) summaryBox.getChildren().get(0);
         Label totalSummary = (Label) summaryBox.getChildren().get(3);
         Label changeSummary = (Label) summaryBox.getChildren().get(4);
         
-        // Bind change summary to a separate change label that will be created
-        Label changeLabel = createChangeLabel();
+        // Bind change summary to the provided change label
         changeSummary.textProperty().bind(changeLabel.textProperty());
         
         Runnable updateSummaries = createSummaryUpdater(subtotalSummary, totalSummary, cart);
@@ -1147,10 +1149,16 @@ public class PaymentSectionView extends VBox {
         row.put("stock_quantity", item.getProduct().getQuantity());
         row.put("subtotal", item.getSubtotal());
         
-        InventoryItemData inventoryData = getInventoryItemData(conn, item.getProduct().getSku());
-        row.put("sale_channel", inventoryData.saleChannel);
-        row.put("online_inventory_item_id", inventoryData.onlineInventoryItemId);
-        row.put("in_store_inventory_item_id", inventoryData.inStoreInventoryItemId);
+        try {
+            InventoryItemData inventoryData = getInventoryItemData(conn, item.getProduct().getSku());
+            row.put("sale_channel", inventoryData.saleChannel);
+            row.put("online_inventory_item_id", inventoryData.onlineInventoryItemId);
+            row.put("in_store_inventory_item_id", inventoryData.inStoreInventoryItemId);
+        } catch (RuntimeException e) {
+            // Re-throw with more context about which item failed
+            throw new RuntimeException("Failed to process item '" + item.getProduct().getDescription() + 
+                "' (SKU: " + item.getProduct().getSku() + "): " + e.getMessage(), e);
+        }
         
         return row;
     }
@@ -1160,9 +1168,17 @@ public class PaymentSectionView extends VBox {
             ProductDAO.InventoryItemInfo info = ProductDAO.getInventoryItemInfoBySku(conn, sku);
             if (info != null) {
                 String saleChannel = info.saleChannel;
-                Integer onlineId = ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) 
-                                 ? info.inventoryItemId : null;
-                Integer inStoreId = !"online".equalsIgnoreCase(saleChannel) ? info.inventoryItemId : null;
+                Integer onlineId = null;
+                Integer inStoreId = null;
+                
+                // For 'both' and 'online' products, use online inventory item ID
+                if ("both".equalsIgnoreCase(saleChannel) || "online".equalsIgnoreCase(saleChannel)) {
+                    onlineId = info.inventoryItemId;
+                }
+                // For 'in-store' products, use in-store inventory item ID  
+                else if ("in-store".equalsIgnoreCase(saleChannel)) {
+                    inStoreId = info.inventoryItemId;
+                }
                 
                 return new InventoryItemData(saleChannel, onlineId, inStoreId);
             }
@@ -1226,12 +1242,12 @@ public class PaymentSectionView extends VBox {
         javafx.application.Platform.runLater(() -> {
             ReceiptDialog.show(cart, paid, total, paymentMethodValue, paid - total, () -> {
                 onPaymentCompleted.run();
-                resetPaymentForm(cart, amountField, changeLabel, paymentMethod);
+                resetPaymentForm(cart, amountField, paymentMethod);
             }, cashierName, receiptNumber, discount, tax);
         });
     }
 
-    private void resetPaymentForm(ObservableList<CartItem> cart, TextField amountField, Label changeLabel, ComboBox<String> paymentMethod) {
+    private void resetPaymentForm(ObservableList<CartItem> cart, TextField amountField, ComboBox<String> paymentMethod) {
         cart.clear();
         amountField.clear();
         changeLabel.setText("");
