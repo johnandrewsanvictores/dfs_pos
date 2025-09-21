@@ -161,7 +161,7 @@
         <band height="0" splitType="Stretch"/>
     </columnFooter>
     <summary>
-        <band height="150" splitType="Stretch">
+        <band height="160" splitType="Stretch">
             <line>
                 <reportElement x="0" y="0" width="263" height="1" isRemoveLineWhenBlank="true"/>
             </line>
@@ -270,7 +270,14 @@
                 <text><![CDATA[Thank you for shopping!]]></text>
             </staticText>
             <staticText>
-                <reportElement x="0" y="130" width="263" height="15" isRemoveLineWhenBlank="true"/>
+                <reportElement x="0" y="125" width="263" height="20" isRemoveLineWhenBlank="true"/>
+                <textElement textAlignment="Center">
+                    <font size="8"/>
+                </textElement>
+                <text><![CDATA[This receipt is valid for returns within 7 days]]></text>
+            </staticText>
+            <staticText>
+                <reportElement x="0" y="140" width="263" height="15" isRemoveLineWhenBlank="true" />
                 <textElement textAlignment="Center">
                 </textElement>
                 <text><![CDATA[Powered by Dream Fashion POS System]]></text>

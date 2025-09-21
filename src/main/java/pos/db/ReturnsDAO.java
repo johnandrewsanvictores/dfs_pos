@@ -89,6 +89,43 @@ public class ReturnsDAO {
         return null;
     }
     
+    /**
+     * Get return transaction details for receipt generation
+     */
+    public static ReturnDetails getReturnDetails(Connection conn, int returnId) throws SQLException {
+        String query = "SELECT refund_method, notes FROM pos_returns WHERE return_id = ?";
+        PreparedStatement stmt = conn.prepareStatement(query);
+        stmt.setInt(1, returnId);
+        ResultSet rs = stmt.executeQuery();
+        
+        if (rs.next()) {
+            ReturnDetails details = new ReturnDetails(
+                rs.getString("refund_method"),
+                rs.getString("notes")
+            );
+            rs.close();
+            stmt.close();
+            return details;
+        }
+        
+        rs.close();
+        stmt.close();
+        return null;
+    }
+    
+    /**
+     * Data class to hold return transaction details
+     */
+    public static class ReturnDetails {
+        public final String refundMethod;
+        public final String notes;
+        
+        public ReturnDetails(String refundMethod, String notes) {
+            this.refundMethod = refundMethod;
+            this.notes = notes;
+        }
+    }
+    
     public static InvoiceValidationResult validateInvoiceForReturns(Connection conn, String invoiceNo) throws SQLException {
         // 1. Check if invoice exists and get transaction date
         String checkInvoiceQuery = "SELECT id, transaction_date FROM pos_transactions WHERE invoice_no = ?";

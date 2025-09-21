@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd" name="ReturnReceipt" pageWidth="283" pageHeight="1000" columnWidth="263" leftMargin="5" rightMargin="5" topMargin="5" bottomMargin="5" uuid="87654321-4321-4321-4321-210987654321" isIgnorePagination="true">
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd"
+              name="ReturnReceipt"
+              pageWidth="283"
+              pageHeight="1000"
+              columnWidth="263"
+              leftMargin="5"
+              rightMargin="5"
+              topMargin="5"
+              bottomMargin="5"
+              uuid="87654321-4321-4321-4321-210987654321"
+              isIgnorePagination="true"
+              >
+
+    <!-- Parameters -->
     <parameter name="returnNo" class="java.lang.String"/>
     <parameter name="originalInvoiceNo" class="java.lang.String"/>
     <parameter name="returnDate" class="java.lang.String"/>
@@ -13,11 +28,17 @@
     <parameter name="refundTotal" class="java.math.BigDecimal"/>
     <parameter name="customerName" class="java.lang.String"/>
     <parameter name="originalTransactionDate" class="java.lang.String"/>
+    <parameter name="refundMethod" class="java.lang.String"/>
+    <parameter name="refundReason" class="java.lang.String"/>
+
+    <!-- Fields -->
     <field name="productName" class="java.lang.String"/>
     <field name="returnQuantity" class="java.lang.Integer"/>
     <field name="originalPrice" class="java.math.BigDecimal"/>
     <field name="discountAmount" class="java.math.BigDecimal"/>
     <field name="refundAmount" class="java.math.BigDecimal"/>
+
+    <!-- Title -->
     <title>
         <band height="135" splitType="Stretch">
             <staticText>
@@ -67,31 +88,45 @@
             </staticText>
         </band>
     </title>
+
+    <!-- Page Header -->
     <pageHeader>
-        <band height="50" splitType="Stretch">
+        <band height="80" splitType="Stretch">
             <textField>
                 <reportElement x="0" y="0" width="133" height="15" isRemoveLineWhenBlank="true"/>
-                <textElement textAlignment="Left">
-                    <paragraph/>
-                </textElement>
+                <textElement textAlignment="Left"/>
                 <textFieldExpression><![CDATA["Return No: " + $P{returnNo}]]></textFieldExpression>
             </textField>
+
             <textField>
                 <reportElement x="133" y="0" width="133" height="15" isRemoveLineWhenBlank="true"/>
-                <textElement textAlignment="Right">
-                    <paragraph/>
-                </textElement>
+                <textElement textAlignment="Right"/>
                 <textFieldExpression><![CDATA[$P{returnDate}]]></textFieldExpression>
             </textField>
+
             <textField>
                 <reportElement x="0" y="15" width="263" height="15" isRemoveLineWhenBlank="true"/>
-                <textElement textAlignment="Left">
-                    <paragraph/>
-                </textElement>
+                <textElement textAlignment="Left"/>
+                <textFieldExpression><![CDATA["Original Invoice: " + $P{originalInvoiceNo}]]></textFieldExpression>
+            </textField>
+
+            <textField>
+                <reportElement x="0" y="30" width="263" height="15" isRemoveLineWhenBlank="true"/>
+                <textElement textAlignment="Left"/>
                 <textFieldExpression><![CDATA["Cashier: " + $P{cashierName}]]></textFieldExpression>
+            </textField>
+
+            <textField>
+                <reportElement x="0" y="45" width="263" height="15" isRemoveLineWhenBlank="true">
+                    <printWhenExpression><![CDATA[$P{customerName} != null && !$P{customerName}.trim().isEmpty()]]></printWhenExpression>
+                </reportElement>
+                <textElement textAlignment="Left"/>
+                <textFieldExpression><![CDATA["Customer: " + $P{customerName}]]></textFieldExpression>
             </textField>
         </band>
     </pageHeader>
+
+    <!-- Column Header -->
     <columnHeader>
         <band height="24" splitType="Stretch">
             <line>
@@ -102,24 +137,24 @@
                 <textElement textAlignment="Left">
                     <font isBold="true"/>
                 </textElement>
-                <text><![CDATA[Item]]></text>
+                <text><![CDATA[Items]]></text>
             </staticText>
             <staticText>
-                <reportElement x="103" y="0" width="43" height="20" isRemoveLineWhenBlank="true"/>
-                <textElement textAlignment="Center">
-                    <font isBold="true"/>
-                </textElement>
-                <text><![CDATA[Qty]]></text>
-            </staticText>
-            <staticText>
-                <reportElement x="143" y="0" width="60" height="20" isRemoveLineWhenBlank="true"/>
+                <reportElement x="103" y="0" width="53" height="20" isRemoveLineWhenBlank="true"/>
                 <textElement textAlignment="Right">
                     <font isBold="true"/>
                 </textElement>
                 <text><![CDATA[Price]]></text>
             </staticText>
             <staticText>
-                <reportElement x="203" y="0" width="60" height="20" isRemoveLineWhenBlank="true"/>
+                <reportElement x="156" y="0" width="53" height="20" isRemoveLineWhenBlank="true"/>
+                <textElement textAlignment="Right">
+                    <font isBold="true"/>
+                </textElement>
+                <text><![CDATA[Discount]]></text>
+            </staticText>
+            <staticText>
+                <reportElement x="209" y="0" width="54" height="20" isRemoveLineWhenBlank="true"/>
                 <textElement textAlignment="Right">
                     <font isBold="true"/>
                 </textElement>
@@ -127,31 +162,42 @@
             </staticText>
         </band>
     </columnHeader>
+
+    <!-- Detail -->
     <detail>
         <band height="18" splitType="Stretch">
             <textField>
-                <reportElement x="0" y="0" width="103" height="18" isRemoveLineWhenBlank="true"/>
-                <textElement>
-                    <paragraph/>
-                </textElement>
-                <textFieldExpression><![CDATA[$F{productName}]]></textFieldExpression>
+                <reportElement x="0" y="0" width="103" height="18" isRemoveLineWhenBlank="true">
+                    <printWhenExpression><![CDATA[$F{returnQuantity} > 0 && $F{refundAmount}.compareTo(new java.math.BigDecimal("0.00")) > 0]]></printWhenExpression>
+                </reportElement>
+                <textElement/>
+                <textFieldExpression><![CDATA[$F{returnQuantity} + "x " + $F{productName}]]></textFieldExpression>
             </textField>
-            <textField>
-                <reportElement x="103" y="0" width="43" height="18" isRemoveLineWhenBlank="true"/>
-                <textElement textAlignment="Center">
-                    <paragraph/>
-                </textElement>
-                <textFieldExpression><![CDATA[$F{returnQuantity}]]></textFieldExpression>
-            </textField>
+
             <textField pattern="#,#00.00">
-                <reportElement x="143" y="0" width="60" height="18" isRemoveLineWhenBlank="true"/>
+                <reportElement x="103" y="0" width="53" height="18" isRemoveLineWhenBlank="true">
+                    <printWhenExpression><![CDATA[$F{returnQuantity} > 0 && $F{refundAmount}.compareTo(new java.math.BigDecimal("0.00")) > 0]]></printWhenExpression>
+                </reportElement>
                 <textElement textAlignment="Right">
                     <font isBold="true"/>
                 </textElement>
                 <textFieldExpression><![CDATA[$F{originalPrice}]]></textFieldExpression>
             </textField>
+
             <textField pattern="#,#00.00">
-                <reportElement x="203" y="0" width="60" height="18" isRemoveLineWhenBlank="true"/>
+                <reportElement x="156" y="0" width="53" height="18" isRemoveLineWhenBlank="true">
+                    <printWhenExpression><![CDATA[$F{returnQuantity} > 0 && $F{refundAmount}.compareTo(new java.math.BigDecimal("0.00")) > 0]]></printWhenExpression>
+                </reportElement>
+                <textElement textAlignment="Right">
+                    <font isBold="true"/>
+                </textElement>
+                <textFieldExpression><![CDATA[$F{discountAmount}]]></textFieldExpression>
+            </textField>
+
+            <textField pattern="#,#00.00">
+                <reportElement x="209" y="0" width="54" height="18" isRemoveLineWhenBlank="true">
+                    <printWhenExpression><![CDATA[$F{returnQuantity} > 0 && $F{refundAmount}.compareTo(new java.math.BigDecimal("0.00")) > 0]]></printWhenExpression>
+                </reportElement>
                 <textElement textAlignment="Right">
                     <font isBold="true"/>
                 </textElement>
@@ -159,11 +205,15 @@
             </textField>
         </band>
     </detail>
+
+    <!-- Column Footer -->
     <columnFooter>
         <band height="0" splitType="Stretch"/>
     </columnFooter>
+
+    <!-- Summary -->
     <summary>
-        <band height="150" splitType="Stretch">
+        <band height="200" splitType="Stretch">
             <line>
                 <reportElement x="0" y="0" width="263" height="1" isRemoveLineWhenBlank="true"/>
             </line>
@@ -186,69 +236,70 @@
                 <textElement>
                     <font isBold="true"/>
                 </textElement>
-                <text><![CDATA[Discount:]]></text>
+                <text><![CDATA[Tax:]]></text>
             </staticText>
             <textField pattern="#,#00.00">
                 <reportElement x="143" y="20" width="120" height="15" isRemoveLineWhenBlank="true"/>
                 <textElement textAlignment="Right">
                     <font isBold="true"/>
                 </textElement>
-                <textFieldExpression><![CDATA["₱" + String.format("%.2f", $P{originalDiscount} == null ? 0.0 : $P{originalDiscount}.doubleValue())]]></textFieldExpression>
-            </textField>
-            <staticText>
-                <reportElement x="0" y="35" width="143" height="15" isRemoveLineWhenBlank="true"/>
-                <textElement>
-                    <font isBold="true"/>
-                </textElement>
-                <text><![CDATA[Tax:]]></text>
-            </staticText>
-            <textField pattern="#,#00.00">
-                <reportElement x="143" y="35" width="120" height="15" isRemoveLineWhenBlank="true"/>
-                <textElement textAlignment="Right">
-                    <font isBold="true"/>
-                </textElement>
                 <textFieldExpression><![CDATA["₱" + String.format("%.2f", $P{refundTax}.doubleValue())]]></textFieldExpression>
             </textField>
+            <line>
+                <reportElement x="0" y="35" width="263" height="1" isRemoveLineWhenBlank="true"/>
+            </line>
             <staticText>
-                <reportElement x="0" y="50" width="143" height="15" isRemoveLineWhenBlank="true"/>
+                <reportElement x="0" y="40" width="143" height="15" isRemoveLineWhenBlank="true"/>
                 <textElement>
                     <font isBold="true"/>
                 </textElement>
                 <text><![CDATA[TOTAL REFUND:]]></text>
             </staticText>
             <textField pattern="#,#00.00">
-                <reportElement x="143" y="50" width="120" height="15" isRemoveLineWhenBlank="true"/>
+                <reportElement x="143" y="40" width="120" height="15" isRemoveLineWhenBlank="true"/>
                 <textElement textAlignment="Right">
                     <font isBold="true"/>
                 </textElement>
                 <textFieldExpression><![CDATA["₱" + String.format("%.2f", $P{refundTotal}.doubleValue())]]></textFieldExpression>
             </textField>
             <staticText>
-                <reportElement x="0" y="65" width="263" height="15" isRemoveLineWhenBlank="true"/>
-                <textElement textAlignment="Center">
+                <reportElement x="0" y="65" width="83" height="15" isRemoveLineWhenBlank="true"/>
+                <textElement textAlignment="Left">
                     <font isBold="true"/>
                 </textElement>
-                <text><![CDATA[Original Invoice: ]]></text>
+                <text><![CDATA[Refund Method:]]></text>
             </staticText>
             <textField>
-                <reportElement x="0" y="80" width="263" height="15" isRemoveLineWhenBlank="true"/>
-                <textElement textAlignment="Center">
+                <reportElement x="83" y="65" width="180" height="15" isRemoveLineWhenBlank="true"/>
+                <textElement textAlignment="Left">
                     <font isBold="true"/>
                 </textElement>
-                <textFieldExpression><![CDATA[$P{originalInvoiceNo}]]></textFieldExpression>
+                <textFieldExpression><![CDATA[$P{refundMethod} != null ? $P{refundMethod} : "Cash"]]></textFieldExpression>
             </textField>
             <staticText>
-                <reportElement x="0" y="95" width="263" height="20" isRemoveLineWhenBlank="true"/>
-                <textElement textAlignment="Center">
+                <reportElement x="0" y="85" width="83" height="15" isRemoveLineWhenBlank="true"/>
+                <textElement textAlignment="Left">
+                    <font isBold="true"/>
                 </textElement>
+                <text><![CDATA[Reason:]]></text>
+            </staticText>
+            <textField>
+                <reportElement x="83" y="85" width="180" height="15" isRemoveLineWhenBlank="true"/>
+                <textElement textAlignment="Left">
+                    <font isBold="true"/>
+                </textElement>
+                <textFieldExpression><![CDATA[$P{refundReason} != null ? $P{refundReason} : "Customer return"]]></textFieldExpression>
+            </textField>
+            <staticText>
+                <reportElement x="0" y="115" width="263" height="20" isRemoveLineWhenBlank="true"/>
+                <textElement textAlignment="Center"/>
                 <text><![CDATA[Thank you for shopping with us!]]></text>
             </staticText>
             <staticText>
-                <reportElement x="0" y="115" width="263" height="15" isRemoveLineWhenBlank="true"/>
-                <textElement textAlignment="Center">
-                </textElement>
+                <reportElement x="0" y="135" width="263" height="15" isRemoveLineWhenBlank="true"/>
+                <textElement textAlignment="Center"/>
                 <text><![CDATA[Powered by Dream Fashion POS System]]></text>
             </staticText>
         </band>
     </summary>
-</jasperReport> 
+</jasperReport>

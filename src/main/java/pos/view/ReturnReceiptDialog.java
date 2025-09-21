@@ -81,6 +81,10 @@ public class ReturnReceiptDialog {
         // Get original transaction data to calculate proportional tax
         Connection conn = DBConnection.getConnection();
         ReturnsDAO.InvoiceData originalData = ReturnsDAO.getInvoiceData(conn, originalInvoiceNo);
+        
+        // Get return transaction details for refund method and reason
+        ReturnsDAO.ReturnDetails returnDetails = ReturnsDAO.getReturnDetails(conn, returnId);
+        
         conn.close();
         
         if (originalData == null) {
@@ -109,6 +113,10 @@ public class ReturnReceiptDialog {
         params.put("returnDate", formatCurrentDate());
         params.put("cashierName", cashierName);
         params.put("customerName", originalData.customerName != null ? originalData.customerName : "");
+        
+        // Refund method and reason from return transaction
+        params.put("refundMethod", returnDetails != null ? returnDetails.refundMethod : "Cash");
+        params.put("refundReason", returnDetails != null ? returnDetails.notes : "Customer return");
         
         // Original transaction totals
         params.put("originalSubtotal", new java.math.BigDecimal(originalData.subtotal));
