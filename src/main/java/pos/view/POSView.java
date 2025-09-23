@@ -178,44 +178,75 @@ public class POSView extends BorderPane {
     }
     
     private void setupBarcodeSceneListener(javafx.scene.Scene scene) {
-        scene.setOnKeyPressed(this::handleGlobalKeyPress);
+        // Use addEventFilter instead of setOnKeyPressed to intercept events before they reach other handlers
+        scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handleGlobalKeyPress);
     }
     
     private void handleGlobalKeyPress(KeyEvent event) {
-        // Skip if user is typing in a text field (except for very fast barcode input)
-        if (isUserTypingInTextField(event)) {
+        // Always check if we're in normal mode first
+        boolean isInNormalMode = productCatalog != null && mainContent != null && 
+                                mainContent.getChildren().contains(productCatalog);
+        
+        if (!isInNormalMode) {
+            return; // Don't handle any keys if not in normal mode
+        }
+        
+        // Check what currently has focus
+        javafx.scene.Node focusedNode = getScene().getFocusOwner();
+        boolean isTextFieldFocused = focusedNode instanceof TextField || focusedNode instanceof TextArea;
+        
+        // ALWAYS consume Enter key if no text field is focused to prevent logout dialog
+        if (event.getCode() == KeyCode.ENTER && !isTextFieldFocused) {
+            // Only process if we have some barcode data
+            if (barcodeBuffer.length() > 0) {
+                processPotentialBarcodeToSearchField();
+            }
+            event.consume(); // Always consume Enter to prevent logout
             return;
         }
         
-        long currentTime = System.currentTimeMillis();
-        long timeSinceLastKeystroke = currentTime - lastKeystrokeTime.get();
-        
-        // If too much time has passed, reset the buffer (user is typing manually)
-        if (timeSinceLastKeystroke > BARCODE_INPUT_TIMEOUT_MS) {
-            barcodeBuffer.setLength(0);
-        }
-        
-        lastKeystrokeTime.set(currentTime);
-        
-        String character = event.getText();
-        
-        // Handle Enter key - process potential barcode
-        if (event.getCode() == KeyCode.ENTER) {
-            processPotentialBarcode();
-            event.consume();
-            return;
-        }
-        
-        // Add character to buffer if it's valid
-        if (character != null && !character.isEmpty() && isValidBarcodeCharacter(character)) {
-            barcodeBuffer.append(character);
+        // If no text field is focused, handle barcode character input
+        if (!isTextFieldFocused) {
+            long currentTime = System.currentTimeMillis();
+            long timeSinceLastKeystroke = currentTime - lastKeystrokeTime.get();
             
-            // Auto-process if we've reached max barcode length
-            if (barcodeBuffer.length() >= BARCODE_MAX_LENGTH) {
-                processPotentialBarcode();
+            // If too much time has passed, reset the buffer (user is typing manually)
+            if (timeSinceLastKeystroke > BARCODE_INPUT_TIMEOUT_MS) {
+                barcodeBuffer.setLength(0);
             }
             
-            event.consume(); // Prevent the keystroke from going to focused component
+            lastKeystrokeTime.set(currentTime);
+            
+            String character = event.getText();
+            
+            // Add character to buffer if it's valid
+            if (character != null && !character.isEmpty() && isValidBarcodeCharacter(character)) {
+                barcodeBuffer.append(character);
+                
+                // Auto-process if we've reached max barcode length
+                if (barcodeBuffer.length() >= BARCODE_MAX_LENGTH) {
+                    processPotentialBarcodeToSearchField();
+                }
+                
+                event.consume(); // Prevent the keystroke from going to other components
+            }
+        } else {
+            // Text field is focused - let it handle input normally, but still watch for barcode patterns
+            if (focusedNode == productCatalog.getSearchField()) {
+                // Search field is focused - let normal search behavior work
+                return;
+            } else {
+                // Some other text field is focused - check if this might be barcode input
+                if (isUserTypingInTextField(event)) {
+                    return; // Let normal typing continue
+                }
+                
+                // If it's very fast input (barcode scanner), consume the event
+                long timeSinceLastKeystroke = System.currentTimeMillis() - lastKeystrokeTime.get();
+                if (timeSinceLastKeystroke <= BARCODE_INPUT_TIMEOUT_MS) {
+                    event.consume();
+                }
+            }
         }
     }
     
@@ -237,7 +268,7 @@ public class POSView extends BorderPane {
         return character.matches("[0-9A-Za-z\\-_.]");
     }
     
-    private void processPotentialBarcode() {
+    private void processPotentialBarcodeToSearchField() {
         String potentialBarcode = barcodeBuffer.toString().trim();
         barcodeBuffer.setLength(0); // Clear buffer
         
@@ -247,78 +278,12 @@ public class POSView extends BorderPane {
             return;
         }
         
-        // Process the barcode
-        handleBarcodeScanned(potentialBarcode);
-    }
-    
-    private void handleBarcodeScanned(String barcode) {
-        System.out.println("Barcode scanned: " + barcode); // For debugging
-        
-        // Search for product by SKU (barcode)
-        Product foundProduct = findProductByBarcode(barcode);
-        
-        if (foundProduct != null) {
-            // Add product to cart
-            addScannedProductToCart(foundProduct);
-            
-            // Show feedback to user
-            showBarcodeSuccessNotification(foundProduct);
-        } else {
-            // Show error notification
-            showBarcodeNotFoundNotification(barcode);
-        }
-    }
-    
-    private Product findProductByBarcode(String barcode) {
-        if (products == null) return null;
-        
-        for (Product product : products) {
-            if (product.getSku().equalsIgnoreCase(barcode)) {
-                return product;
-            }
-        }
-        return null;
-    }
-    
-    private void addScannedProductToCart(Product product) {
+        // Focus search field and put barcode text in it, then trigger search action
         if (productCatalog != null) {
-            // Use the existing addProductToCart method from ProductCatalogView
-            productCatalog.addProductToCartDirectly(product);
+            productCatalog.focusSearchField();
+            productCatalog.setSearchFieldText(potentialBarcode);
+            productCatalog.triggerSearchEnterAction();
         }
-    }
-    
-    private void showBarcodeSuccessNotification(Product product) {
-        // Create a temporary notification
-        Label notification = new Label("✓ Added: " + product.getDescription());
-        notification.setStyle("-fx-background-color: #4caf50; -fx-text-fill: white; " +
-                            "-fx-padding: 10; -fx-background-radius: 5;");
-        
-        showTemporaryNotification(notification, 2000); // Show for 2 seconds
-    }
-    
-    private void showBarcodeNotFoundNotification(String barcode) {
-        Label notification = new Label("⚠ Product not found: " + barcode);
-        notification.setStyle("-fx-background-color: #f44336; -fx-text-fill: white; " +
-                            "-fx-padding: 10; -fx-background-radius: 5;");
-        
-        showTemporaryNotification(notification, 3000); // Show for 3 seconds
-    }
-    
-    private void showTemporaryNotification(Label notification, int durationMs) {
-        // Position notification at top-center of the window
-        StackPane notificationPane = new StackPane(notification);
-        notificationPane.setAlignment(Pos.TOP_CENTER);
-        notificationPane.setStyle("-fx-padding: 20;");
-        
-        // Add to the top of the BorderPane temporarily
-        setTop(new VBox(5, buildHeader(), notificationPane));
-        
-        // Remove notification after specified duration
-        Timeline hideNotification = new Timeline(new KeyFrame(
-            Duration.millis(durationMs),
-            e -> setTop(buildHeader()) // Restore original header
-        ));
-        hideNotification.play();
     }
     
     private void toggleReturnsMode(PaymentSectionView paymentSection, CartView cartView) {

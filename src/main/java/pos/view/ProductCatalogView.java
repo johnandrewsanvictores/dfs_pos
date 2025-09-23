@@ -436,6 +436,18 @@ public class ProductCatalogView extends VBox {
     public void focusSearchField() {
         searchField.requestFocus();
     }
+    
+    public TextField getSearchField() {
+        return searchField;
+    }
+    
+    public void setSearchFieldText(String text) {
+        searchField.setText(text);
+    }
+    
+    public void triggerSearchEnterAction() {
+        handleSearchEnterKey();
+    }
 
     // Add this method to allow hiding 0-quantity products after checkout
     public void refreshAfterCheckout() {
