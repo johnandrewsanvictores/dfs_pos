@@ -74,6 +74,8 @@ public class PaymentSectionView extends VBox {
     private Runnable onReturnsModeToggle;
     private VBox normalPaymentSummary;
     private VBox returnsSummary;
+    // Label to show the original invoice number in returns mode
+    private Label originalInvoiceLabel;
     
     // Payment fields references for hiding in returns mode
     private Label paymentMethodLabel;
@@ -91,7 +93,7 @@ public class PaymentSectionView extends VBox {
         
         initializeComponent();
         initializePromotionsAndVAT();
-        
+
         // Create UI components
         Label paymentLabel = createPaymentLabel();
         processReturnsButton = createProcessReturnsButton(); // Store reference
@@ -102,16 +104,31 @@ public class PaymentSectionView extends VBox {
         VBox summaryBox = createSummaryBox();
         VBox dateTimeBox = createDateTimeBox(dateLabel, timeLabel);
         completePaymentBtn = createPayButton();
-        
+
+        // Create the original invoice label (hidden by default)
+        originalInvoiceLabel = new Label();
+        originalInvoiceLabel.setStyle("-fx-font-size: 24px; -fx-text-fill: #1976d2; -fx-font-weight: bold;");
+        originalInvoiceLabel.setVisible(false);
+        originalInvoiceLabel.setManaged(false);
+
         // Store normal payment summary for later
         normalPaymentSummary = summaryBox;
-        
+
         setupReferenceNumberField(paymentMethodCombo);
         setupCartListeners(summaryBox, cart, changeLabel);
         setupChangeCalculation(cart, amountPaidField, paymentMethodCombo, changeLabel);
         setupPaymentHandling(cart, products, onPaymentCompleted, paymentMethodCombo, amountPaidField, errorLabel, completePaymentBtn);
-        
+
         assemblePaymentContent(paymentLabel, processReturnsButton, paymentMethodCombo, amountPaidField, errorLabel, completePaymentBtn, summaryBox, dateTimeBox);
+
+        // Insert the original invoice label after the processReturnsButton
+        int idx = paymentContent.getChildren().indexOf(processReturnsButton);
+        if (idx >= 0) {
+            paymentContent.getChildren().add(idx + 1, originalInvoiceLabel);
+        } else {
+            paymentContent.getChildren().add(1, originalInvoiceLabel);
+        }
+
         setupOverlayAndLoader();
         setupPeriodicRefresh();
     }
@@ -283,22 +300,28 @@ public class PaymentSectionView extends VBox {
     
     private void enterReturnsMode() {
         isReturnsMode = true;
-        
+
+        // Show the original invoice label
+        String invoiceNo = returnsManager.getInvoiceNumber();
+        originalInvoiceLabel.setText("Original Invoice: " + (invoiceNo != null ? invoiceNo : ""));
+        originalInvoiceLabel.setVisible(true);
+        originalInvoiceLabel.setManaged(true);
+
         // Update button text and colors first
         updateButtonsForReturnsMode();
-        
+
         // Hide payment fields
         hidePaymentFields();
-        
+
         // Update layout to align button with Payment & Summary (after button text is updated)
         updatePaymentContentLayout();
-        
+
         // Create and show returns summary
         returnsSummary = returnsManager.createReturnsSummaryBox();
-        
+
         // Replace summary in payment content
         replaceSummaryInPaymentContent(returnsSummary);
-        
+
         // Notify parent to hide product catalog and show returns cart
         if (onReturnsModeToggle != null) {
             onReturnsModeToggle.run();
@@ -307,22 +330,26 @@ public class PaymentSectionView extends VBox {
     
     private void exitReturnsMode() {
         isReturnsMode = false;
-        
+
+        // Hide the original invoice label
+        originalInvoiceLabel.setVisible(false);
+        originalInvoiceLabel.setManaged(false);
+
         // Update button text and colors
         updateButtonsForReturnsMode();
-        
+
         // Restore normal layout
         restoreNormalLayout();
-        
+
         // Show payment fields
         showPaymentFields();
-        
+
         // Clear returns data
         returnsManager.clearReturns();
-        
+
         // Restore normal payment summary
         replaceSummaryInPaymentContent(normalPaymentSummary);
-        
+
         // Notify parent to show product catalog and restore normal cart
         if (onReturnsModeToggle != null) {
             onReturnsModeToggle.run();
