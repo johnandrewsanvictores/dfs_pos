@@ -249,16 +249,16 @@
                 <reportElement x="0" y="35" width="263" height="1" isRemoveLineWhenBlank="true"/>
             </line>
             <staticText>
-                <reportElement x="0" y="40" width="143" height="15" isRemoveLineWhenBlank="true"/>
+                <reportElement x="0" y="40" width="143" height="20" isRemoveLineWhenBlank="true"/>
                 <textElement>
-                    <font isBold="true"/>
+                    <font isBold="true" size="12"/>
                 </textElement>
                 <text><![CDATA[TOTAL REFUND:]]></text>
             </staticText>
             <textField pattern="#,#00.00">
-                <reportElement x="143" y="40" width="120" height="15" isRemoveLineWhenBlank="true"/>
+                <reportElement x="143" y="40" width="120" height="20" isRemoveLineWhenBlank="true"/>
                 <textElement textAlignment="Right">
-                    <font isBold="true"/>
+                    <font isBold="true" size="12"/>
                 </textElement>
                 <textFieldExpression><![CDATA["₱" + String.format("%.2f", $P{refundTotal}.doubleValue())]]></textFieldExpression>
             </textField>

@@ -702,26 +702,8 @@ public class PaymentSectionView extends VBox {
                             originalInvoiceNo,
                             cashierName,
                             () -> {
-                                // After receipt is shown, display success message
-                                Platform.runLater(() -> {
-                                    Alert successAlert = new Alert(Alert.AlertType.INFORMATION);
-                                    successAlert.setTitle("Refund Processed");
-                                    successAlert.setHeaderText("Refund Completed Successfully");
-                                    successAlert.setContentText(String.format(
-                                        "Return Number: %s\n" +
-                                        "Original Invoice: %s\n" +
-                                        "Refund Amount: ₱%.2f\n" +
-                                        "Payment Method: CASH\n\n" +
-                                        "Inventory has been updated.\n" +
-                                        "Please provide cash refund to the customer.",
-                                        returnResult.returnNo, originalInvoiceNo, summary.refundTotal
-                                    ));
-                                    successAlert.getDialogPane().setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 14px;");
-                                    successAlert.showAndWait();
-                                    
-                                    // Exit returns mode
-                                    exitReturnsMode();
-                                });
+                                // After showing receipt, exit returns mode
+                                exitReturnsMode();
                             }
                         );
                         

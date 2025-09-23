@@ -208,16 +208,16 @@
                 <textFieldExpression><![CDATA["₱" + String.format("%.2f", $P{Tax})]]></textFieldExpression>
             </textField>
             <staticText>
-                <reportElement x="0" y="50" width="143" height="15" isRemoveLineWhenBlank="true"/>
+                <reportElement x="0" y="50" width="143" height="20" isRemoveLineWhenBlank="true"/>
                 <textElement>
-                    <font isBold="true"/>
+                    <font isBold="true" size="12"/>
                 </textElement>
                 <text><![CDATA[Total:]]></text>
             </staticText>
             <textField pattern="#,#00.00">
-                <reportElement x="143" y="50" width="120" height="15" isRemoveLineWhenBlank="true"/>
+                <reportElement x="143" y="50" width="120" height="20" isRemoveLineWhenBlank="true"/>
                 <textElement textAlignment="Right">
-                    <font isBold="true"/>
+                    <font isBold="true" size="12"/>
                 </textElement>
                 <textFieldExpression><![CDATA["₱" + String.format("%.2f", $P{Total})]]></textFieldExpression>
             </textField>
