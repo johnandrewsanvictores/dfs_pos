@@ -438,6 +438,15 @@ public class PaymentSectionView extends VBox {
         return isReturnsMode ? returnsManager.createReturnsTableView() : null;
     }
 
+    // Method to handle barcode scans in returns mode
+    public ReturnsManager.ScanResult handleReturnsBarcodeScanned(String barcode) {
+        if (!isReturnsMode || returnsManager == null) {
+            return ReturnsManager.ScanResult.INVALID_BARCODE;
+        }
+        
+        return returnsManager.handleBarcodeScanned(barcode);
+    }
+
     private void showAlert(String title, String message) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle(title);

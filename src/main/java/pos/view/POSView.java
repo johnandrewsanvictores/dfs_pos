@@ -46,6 +46,7 @@ public class POSView extends BorderPane {
     private AtomicLong lastKeystrokeTime = new AtomicLong(0);
     private int fastKeystrokeCount = 0; // Count of consecutive fast keystrokes
     private ProductCatalogView productCatalog; // Store reference for barcode searches
+    private PaymentSectionView paymentSection; // Store reference for returns mode
 
     public POSView(Runnable onLogout, String cashierName, int staffId) {
         this.onLogout = onLogout;
@@ -88,7 +89,7 @@ public class POSView extends BorderPane {
             mainContent = new HBox(10);
             productCatalog = new ProductCatalogView(products, cart); // Store reference
             CartView cartView = new CartView(cart, productCatalog.getProductQuantityLabels());
-            PaymentSectionView paymentSection = new PaymentSectionView(cart, products, productCatalog::refreshAfterCheckout, staffId, cashierName, dateLabel, timeLabel);
+            paymentSection = new PaymentSectionView(cart, products, productCatalog::refreshAfterCheckout, staffId, cashierName, dateLabel, timeLabel);
             
             // Set up returns mode toggle
             paymentSection.setOnReturnsModeToggle(() -> toggleReturnsMode(paymentSection, cartView));
@@ -185,17 +186,19 @@ public class POSView extends BorderPane {
     }
     
     private void handleGlobalKeyPress(KeyEvent event) {
-        // Always check if we're in normal mode first
+        // Check if we're in normal mode or returns mode
         boolean isInNormalMode = productCatalog != null && mainContent != null && 
                                 mainContent.getChildren().contains(productCatalog);
+        boolean isInReturnsMode = paymentSection != null && paymentSection.isInReturnsMode();
         
-        if (!isInNormalMode) {
-            return; // Don't handle any keys if not in normal mode
+        // Only handle keys if we're in normal mode or returns mode
+        if (!isInNormalMode && !isInReturnsMode) {
+            return;
         }
         
         // Check what currently has focus
         javafx.scene.Node focusedNode = getScene().getFocusOwner();
-        boolean isSearchFieldFocused = focusedNode == productCatalog.getSearchField();
+        boolean isSearchFieldFocused = isInNormalMode && focusedNode == productCatalog.getSearchField();
         boolean isOtherTextFieldFocused = (focusedNode instanceof TextField || focusedNode instanceof TextArea) && !isSearchFieldFocused;
         
         long currentTime = System.currentTimeMillis();
@@ -213,7 +216,11 @@ public class POSView extends BorderPane {
         if (event.getCode() == KeyCode.ENTER) {
             if (barcodeBuffer.length() > 0 && fastKeystrokeCount >= BARCODE_MIN_CHARS_FOR_DETECTION) {
                 // We have enough fast characters for barcode, process it
-                processPotentialBarcodeToSearchField();
+                if (isInReturnsMode) {
+                    processPotentialBarcodeToReturns();
+                } else {
+                    processPotentialBarcodeToSearchField();
+                }
                 event.consume();
                 return;
             } else if (!isSearchFieldFocused && !isOtherTextFieldFocused) {
@@ -240,14 +247,18 @@ public class POSView extends BorderPane {
             
             // Only start barcode mode if we have enough fast characters
             if (fastKeystrokeCount >= BARCODE_MIN_CHARS_FOR_DETECTION) {
-                // Clear search field if this is when we first detect barcode input
-                if (fastKeystrokeCount == BARCODE_MIN_CHARS_FOR_DETECTION && isSearchFieldFocused) {
+                // Clear search field if this is when we first detect barcode input (normal mode only)
+                if (isInNormalMode && fastKeystrokeCount == BARCODE_MIN_CHARS_FOR_DETECTION && isSearchFieldFocused) {
                     productCatalog.clearSearchField();
                 }
                 
                 // Auto-process if we've reached max length
                 if (barcodeBuffer.length() >= BARCODE_MAX_LENGTH) {
-                    processPotentialBarcodeToSearchField();
+                    if (isInReturnsMode) {
+                        processPotentialBarcodeToReturns();
+                    } else {
+                        processPotentialBarcodeToSearchField();
+                    }
                 }
                 
                 event.consume(); // Consume barcode input
@@ -280,6 +291,56 @@ public class POSView extends BorderPane {
             productCatalog.focusSearchField();
             productCatalog.setSearchFieldText(potentialBarcode);
             productCatalog.triggerSearchEnterAction();
+        }
+    }
+    
+    private void processPotentialBarcodeToReturns() {
+        String potentialBarcode = barcodeBuffer.toString().trim();
+        barcodeBuffer.setLength(0); // Clear buffer
+        fastKeystrokeCount = 0; // Reset counter
+        
+        // Validate barcode length
+        if (potentialBarcode.length() < BARCODE_MIN_LENGTH || 
+            potentialBarcode.length() > BARCODE_MAX_LENGTH) {
+            return;
+        }
+        
+        // Try to find and increment the item in returns
+        if (paymentSection != null) {
+            ReturnsManager.ScanResult result = paymentSection.handleReturnsBarcodeScanned(potentialBarcode);
+            
+            // Show feedback to user based on result
+            switch (result) {
+                case SUCCESS:
+                    // Optional: Show success feedback (could add a toast/notification here)
+                    System.out.println("Item " + potentialBarcode + " added to returns");
+                    break;
+                    
+                case ALREADY_AT_MAX:
+                    // Show dialog that item is already at maximum return quantity
+                    javafx.scene.control.Alert alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.WARNING);
+                    alert.setTitle("Maximum Quantity Reached");
+                    alert.setHeaderText(null);
+                    alert.setContentText("Item '" + potentialBarcode + "' is already at maximum return quantity. All purchased items are already selected for return.");
+                    alert.getDialogPane().setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 14px;");
+                    alert.showAndWait();
+                    break;
+                    
+                case NOT_FOUND:
+                    // Show alert that item wasn't found in the original invoice
+                    javafx.scene.control.Alert notFoundAlert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.WARNING);
+                    notFoundAlert.setTitle("Item Not Found");
+                    notFoundAlert.setHeaderText(null);
+                    notFoundAlert.setContentText("Item '" + potentialBarcode + "' was not found in the original invoice.");
+                    notFoundAlert.getDialogPane().setStyle("-fx-font-family: 'Segoe UI'; -fx-font-size: 14px;");
+                    notFoundAlert.showAndWait();
+                    break;
+                    
+                case INVALID_BARCODE:
+                default:
+                    // Invalid barcode - could show error or just ignore
+                    break;
+            }
         }
     }
     

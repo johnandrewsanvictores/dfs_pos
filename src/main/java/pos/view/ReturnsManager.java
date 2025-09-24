@@ -432,6 +432,53 @@ public class ReturnsManager {
         return summaryBox;
     }
     
+    // Method to handle barcode scans in returns mode
+    public ScanResult handleBarcodeScanned(String barcode) {
+        if (barcode == null || barcode.trim().isEmpty()) {
+            return ScanResult.INVALID_BARCODE;
+        }
+        
+        String cleanBarcode = barcode.trim().toUpperCase();
+        
+        // Debug: Print available items and scanned barcode
+        System.out.println("Scanned barcode: '" + cleanBarcode + "'");
+        System.out.println("Available items in returns:");
+        for (ReturnItem item : returnItems) {
+            System.out.println("  - SKU: '" + item.getProductSku().toUpperCase() + "'");
+        }
+        
+        // Find the item by SKU in the returns list (case-insensitive)
+        for (ReturnItem item : returnItems) {
+            if (cleanBarcode.equals(item.getProductSku().toUpperCase())) {
+                // Check if already at maximum quantity
+                int currentQty = item.getQtyToReturn();
+                int maxQty = item.getQtyPurchased();
+                
+                if (currentQty >= maxQty) {
+                    System.out.println("Item already at maximum return quantity: " + currentQty + "/" + maxQty);
+                    return ScanResult.ALREADY_AT_MAX;
+                }
+                
+                // Found the item, increment its return quantity
+                item.incrementQtyToReturn();
+                System.out.println("Found and incremented item: " + item.getProductSku());
+                return ScanResult.SUCCESS;
+            }
+        }
+        
+        // Item not found in the returns list
+        System.out.println("Item not found in returns list");
+        return ScanResult.NOT_FOUND;
+    }
+    
+    // Result enum for barcode scanning
+    public enum ScanResult {
+        SUCCESS,
+        NOT_FOUND,
+        ALREADY_AT_MAX,
+        INVALID_BARCODE
+    }
+    
     public String getInvoiceNumber() {
         return invoiceNumber;
     }
