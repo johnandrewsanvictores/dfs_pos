@@ -47,10 +47,12 @@ public class ProductCatalogView extends VBox {
     private ProgressIndicator catalogLoader;
     private final ObservableList<CartItem> cart;
     private final TextField searchField;
+    private Product[] allProducts; // Store reference to all products for barcode scanning
 
     public ProductCatalogView(Product[] products, ObservableList<CartItem> cart) {
         this.cart = cart;
         this.searchField = new TextField();
+        this.allProducts = products; // Store reference for barcode scanning
         
         initializeComponent();
         initializeFilteredProducts(products);
@@ -223,13 +225,31 @@ public class ProductCatalogView extends VBox {
     }
 
     private void handleSearchEnterKey() {
-        String search = searchField.getText().trim().toLowerCase();
-        Optional<Product> match = filteredProducts.stream()
-            .filter(p -> p.getSku().toLowerCase().equals(search) && p.getQuantity() > 0)
+        String search = searchField.getText().trim();
+        if (search.isEmpty()) {
+            return; // Don't process empty search
+        }
+        
+        String searchLower = search.toLowerCase();
+        
+        // First, search in ALL products for exact SKU match (for barcode scanning)
+        Optional<Product> exactMatch = Arrays.stream(allProducts)
+            .filter(p -> p.getSku().toLowerCase().equals(searchLower))
             .findFirst();
         
-        if (match.isPresent()) {
-            addProductToCart(match.get());
+        if (exactMatch.isPresent()) {
+            Product product = exactMatch.get();
+            if (product.getQuantity() > 0) {
+                addProductToCart(product);
+                searchField.clear();
+            } else {
+                // Product found but out of stock
+                showOutOfStockDialog(product);
+                searchField.clear();
+            }
+        } else {
+            // No exact match found - show error dialog
+            showProductNotFoundDialog(search);
             searchField.clear();
         }
     }
@@ -267,6 +287,9 @@ public class ProductCatalogView extends VBox {
             
             product.setQuantity(product.getQuantity() - 1);
             updateQuantityLabel(product);
+        } else {
+            // Show error dialog when trying to add out-of-stock product
+            showOutOfStockDialog(product);
         }
     }
 
@@ -283,6 +306,33 @@ public class ProductCatalogView extends VBox {
                 quantityLabel.setStyle(IN_STOCK_STYLE);
             }
         }
+    }
+    
+    private void showOutOfStockDialog(Product product) {
+        Alert alert = createOutOfStockAlert(product);
+        alert.showAndWait();
+    }
+
+    private Alert createOutOfStockAlert(Product product) {
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.setTitle("Out of Stock");
+        alert.setHeaderText("Cannot Add More Items");
+        alert.setContentText(String.format("The product '%s' is out of stock. Cannot add more items to cart.", 
+                                          product.getSku()));
+        return alert;
+    }
+    
+    private void showProductNotFoundDialog(String barcode) {
+        Alert alert = createProductNotFoundAlert(barcode);
+        alert.showAndWait();
+    }
+
+    private Alert createProductNotFoundAlert(String barcode) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle("Product Not Found");
+        alert.setHeaderText("Barcode Not Recognized");
+        alert.setContentText(String.format("No product found with barcode/SKU: '%s'", barcode));
+        return alert;
     }
 
     private void updateProductGridResponsive(ObservableList<Product> products, double width) {
@@ -443,6 +493,10 @@ public class ProductCatalogView extends VBox {
     
     public void setSearchFieldText(String text) {
         searchField.setText(text);
+    }
+    
+    public void clearSearchField() {
+        searchField.clear();
     }
     
     public void triggerSearchEnterAction() {

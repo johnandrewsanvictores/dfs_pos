@@ -26,7 +26,8 @@ public class POSView extends BorderPane {
     // Barcode scanning constants
     private static final int BARCODE_MIN_LENGTH = 8;
     private static final int BARCODE_MAX_LENGTH = 20;
-    private static final long BARCODE_INPUT_TIMEOUT_MS = 100; // Time between keystrokes for barcode
+    private static final long BARCODE_INPUT_TIMEOUT_MS = 50; // Time between keystrokes for barcode
+    private static final int BARCODE_MIN_CHARS_FOR_DETECTION = 5; // Minimum chars typed fast to consider barcode
     
     // Application fields
     private Product[] products;
@@ -43,6 +44,7 @@ public class POSView extends BorderPane {
     // Barcode scanning fields
     private StringBuilder barcodeBuffer = new StringBuilder();
     private AtomicLong lastKeystrokeTime = new AtomicLong(0);
+    private int fastKeystrokeCount = 0; // Count of consecutive fast keystrokes
     private ProductCatalogView productCatalog; // Store reference for barcode searches
 
     public POSView(Runnable onLogout, String cashierName, int staffId) {
@@ -193,74 +195,69 @@ public class POSView extends BorderPane {
         
         // Check what currently has focus
         javafx.scene.Node focusedNode = getScene().getFocusOwner();
-        boolean isTextFieldFocused = focusedNode instanceof TextField || focusedNode instanceof TextArea;
+        boolean isSearchFieldFocused = focusedNode == productCatalog.getSearchField();
+        boolean isOtherTextFieldFocused = (focusedNode instanceof TextField || focusedNode instanceof TextArea) && !isSearchFieldFocused;
         
-        // ALWAYS consume Enter key if no text field is focused to prevent logout dialog
-        if (event.getCode() == KeyCode.ENTER && !isTextFieldFocused) {
-            // Only process if we have some barcode data
-            if (barcodeBuffer.length() > 0) {
+        long currentTime = System.currentTimeMillis();
+        long timeSinceLastKeystroke = currentTime - lastKeystrokeTime.get();
+        
+        // Reset buffer and counter if too much time has passed (slow typing)
+        if (timeSinceLastKeystroke > BARCODE_INPUT_TIMEOUT_MS) {
+            barcodeBuffer.setLength(0);
+            fastKeystrokeCount = 0;
+        }
+        
+        lastKeystrokeTime.set(currentTime);
+        
+        // Handle Enter key
+        if (event.getCode() == KeyCode.ENTER) {
+            if (barcodeBuffer.length() > 0 && fastKeystrokeCount >= BARCODE_MIN_CHARS_FOR_DETECTION) {
+                // We have enough fast characters for barcode, process it
                 processPotentialBarcodeToSearchField();
+                event.consume();
+                return;
+            } else if (!isSearchFieldFocused && !isOtherTextFieldFocused) {
+                // No text field focused and no barcode - consume to prevent logout
+                event.consume();
+                return;
             }
-            event.consume(); // Always consume Enter to prevent logout
+            // Otherwise let normal Enter behavior work (search field, etc.)
             return;
         }
         
-        // If no text field is focused, handle barcode character input
-        if (!isTextFieldFocused) {
-            long currentTime = System.currentTimeMillis();
-            long timeSinceLastKeystroke = currentTime - lastKeystrokeTime.get();
+        String character = event.getText();
+        if (character == null || character.isEmpty() || !isValidBarcodeCharacter(character)) {
+            return; // Not a valid barcode character
+        }
+        
+        // Check if this keystroke is fast enough to be part of barcode input
+        boolean isFastKeystroke = timeSinceLastKeystroke <= BARCODE_INPUT_TIMEOUT_MS;
+        
+        if (isFastKeystroke) {
+            // Increment fast keystroke counter and add to buffer
+            fastKeystrokeCount++;
+            barcodeBuffer.append(character);
             
-            // If too much time has passed, reset the buffer (user is typing manually)
-            if (timeSinceLastKeystroke > BARCODE_INPUT_TIMEOUT_MS) {
-                barcodeBuffer.setLength(0);
-            }
-            
-            lastKeystrokeTime.set(currentTime);
-            
-            String character = event.getText();
-            
-            // Add character to buffer if it's valid
-            if (character != null && !character.isEmpty() && isValidBarcodeCharacter(character)) {
-                barcodeBuffer.append(character);
+            // Only start barcode mode if we have enough fast characters
+            if (fastKeystrokeCount >= BARCODE_MIN_CHARS_FOR_DETECTION) {
+                // Clear search field if this is when we first detect barcode input
+                if (fastKeystrokeCount == BARCODE_MIN_CHARS_FOR_DETECTION && isSearchFieldFocused) {
+                    productCatalog.clearSearchField();
+                }
                 
-                // Auto-process if we've reached max barcode length
+                // Auto-process if we've reached max length
                 if (barcodeBuffer.length() >= BARCODE_MAX_LENGTH) {
                     processPotentialBarcodeToSearchField();
                 }
                 
-                event.consume(); // Prevent the keystroke from going to other components
+                event.consume(); // Consume barcode input
             }
+            // If we haven't reached minimum chars yet, let it pass through as normal typing
         } else {
-            // Text field is focused - let it handle input normally, but still watch for barcode patterns
-            if (focusedNode == productCatalog.getSearchField()) {
-                // Search field is focused - let normal search behavior work
-                return;
-            } else {
-                // Some other text field is focused - check if this might be barcode input
-                if (isUserTypingInTextField(event)) {
-                    return; // Let normal typing continue
-                }
-                
-                // If it's very fast input (barcode scanner), consume the event
-                long timeSinceLastKeystroke = System.currentTimeMillis() - lastKeystrokeTime.get();
-                if (timeSinceLastKeystroke <= BARCODE_INPUT_TIMEOUT_MS) {
-                    event.consume();
-                }
-            }
+            // Slow keystroke - reset counters and let normal text input work
+            barcodeBuffer.setLength(0);
+            fastKeystrokeCount = 0;
         }
-    }
-    
-    private boolean isUserTypingInTextField(KeyEvent event) {
-        // Check if a text input field currently has focus
-        javafx.scene.Node focusedNode = getScene().getFocusOwner();
-        
-        if (focusedNode instanceof TextField || focusedNode instanceof TextArea) {
-            // Allow normal typing in text fields unless it's very fast input (likely barcode scanner)
-            long timeSinceLastKeystroke = System.currentTimeMillis() - lastKeystrokeTime.get();
-            return timeSinceLastKeystroke > BARCODE_INPUT_TIMEOUT_MS;
-        }
-        
-        return false;
     }
     
     private boolean isValidBarcodeCharacter(String character) {
