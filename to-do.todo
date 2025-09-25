@@ -1,0 +1,12 @@
+POS SYTEM:
+    ☐ request to the database of new product every 2mins @critical 
+    ☐ optimize the loading from sign in @low 
+
+    RETURNS MODE:
+        ☐ insert it in sales report transaction table in db to show it @today 
+        ✔ add  a scanner when adding product to be return @today @done (9/24/2025, 7:51:13 PM)
+
+STORE MANAGEMENT SYSTEM:
+    ☐ display the returns from the POS SYSTEM in sales report page @today 
+    ☐ create a new page for returns of pos system
+    

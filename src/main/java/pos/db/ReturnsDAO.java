@@ -10,7 +10,19 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Data Access Object for handling return transactions
+ * Data Access Object for handling r            // 7. Insert transaction log for the return
+            String transactionId = PosTransactionDAO.generateNextTransactionId(conn);
+            PosTransactionDAO.insertTransactionLog(
+                conn,
+                transactionId,     // Generated transaction ID
+                null,             // onlineOrderId (null for POS returns)
+                null,             // posTransactionId (null for returns)
+                null,             // returnId (null, using posReturnId instead)
+                returnId,         // posReturnId from the return record
+                "in-store",       // channel
+                "refund",         // type
+                "refunded"        // status
+            );tions
  * Provides atomic operations for processing returns with proper error handling
  */
 public class ReturnsDAO {
@@ -288,6 +300,20 @@ public class ReturnsDAO {
             // 6. Log cashier return processing activity
             logReturnProcessing(conn, returnData.cashierId, returnData.invoiceNo, 
                               returnData.refundTotal, returnData.supervisorId);
+            
+            // 7. Insert transaction log for the return
+            String transactionId = PosTransactionDAO.generateNextTransactionId(conn);
+            PosTransactionDAO.insertTransactionLog(
+                conn,
+                transactionId,      // Generated transaction ID
+                null,              // onlineOrderId (null for POS returns)
+                null,              // posTransactionId (null for returns)
+                null,  
+                returnId ,      // returnId from the return record
+                "in-store",             // channel
+                "refund",          // type
+                "refunded"         // status
+            );
             
             conn.commit(); // All operations successful
             return new ReturnTransactionResult(returnId, returnNo, returnData.refundTotal, returnData.returnItems);

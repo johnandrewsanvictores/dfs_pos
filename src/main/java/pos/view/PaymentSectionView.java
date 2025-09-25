@@ -1155,7 +1155,7 @@ public class PaymentSectionView extends VBox {
         
         String transactionId = PosTransactionDAO.generateNextTransactionId(conn);
         PosTransactionDAO.insertTransactionLog(
-            conn, transactionId, null, posTransactionId, null,
+            conn, transactionId, null, posTransactionId, null, null,
             "in-store", "sale", "completed"
         );
         
