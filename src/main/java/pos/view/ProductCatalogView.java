@@ -48,11 +48,13 @@ public class ProductCatalogView extends VBox {
     private final ObservableList<CartItem> cart;
     private final TextField searchField;
     private Product[] allProducts; // Store reference to all products for barcode scanning
+    private POSView posView; // Reference to POSView for transaction ID
 
-    public ProductCatalogView(Product[] products, ObservableList<CartItem> cart) {
+    public ProductCatalogView(Product[] products, ObservableList<CartItem> cart, POSView posView) {
         this.cart = cart;
         this.searchField = new TextField();
         this.allProducts = products; // Store reference for barcode scanning
+        this.posView = posView; // Store POSView reference
         
         initializeComponent();
         initializeFilteredProducts(products);
@@ -273,23 +275,47 @@ public class ProductCatalogView extends VBox {
     }
 
     private void addProductToCart(Product product) {
-        if (product.getQuantity() > 0) {
+        try (java.sql.Connection conn = pos.db.DBConnection.getConnection()) {
+            // Find if product already exists in cart
             CartItem found = cart.stream()
                 .filter(ci -> ci.getProduct().getSku().equals(product.getSku()))
                 .findFirst()
                 .orElse(null);
             
             if (found != null) {
-                found.setQuantity(found.getQuantity() + 1);
+                // Update existing cart item - use UPSERT for immediate update
+                int newQty = found.getQuantity() + 1;
+                
+                // Single optimized query: check stock and upsert reservation
+                boolean success = pos.db.StockReservationDAO.upsertReservation(
+                    conn, found.getTransactionId(), product.getSku(), newQty);
+                
+                if (success) {
+                    found.setQuantity(newQty);
+                    product.setQuantity(product.getQuantity() - 1);
+                    updateQuantityLabel(product);
+                }
             } else {
-                cart.add(new CartItem(product, 1));
+                // Create new cart item with SHARED session transaction ID
+                String sessionTransactionId = posView.getCurrentTransactionId();
+                CartItem newItem = new CartItem(product, 1, sessionTransactionId);
+                
+                // Single optimized query: check stock and create reservation
+                boolean success = pos.db.StockReservationDAO.upsertReservation(
+                    conn, sessionTransactionId, product.getSku(), 1);
+                
+                if (success) {
+                    cart.add(newItem);
+                    product.setQuantity(product.getQuantity() - 1);
+                    updateQuantityLabel(product);
+                }
             }
-            
-            product.setQuantity(product.getQuantity() - 1);
-            updateQuantityLabel(product);
-        } else {
-            // Show error dialog when trying to add out-of-stock product
-            showOutOfStockDialog(product);
+        } catch (java.sql.SQLException e) {
+            // Show user-friendly error message from exception
+            showStockUnavailableDialog(product, e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            showErrorDialog("Failed to add product to cart: " + e.getMessage());
         }
     }
 
@@ -333,6 +359,22 @@ public class ProductCatalogView extends VBox {
         alert.setHeaderText("Barcode Not Recognized");
         alert.setContentText(String.format("No product found with barcode/SKU: '%s'", barcode));
         return alert;
+    }
+    
+    private void showStockUnavailableDialog(Product product, String message) {
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.setTitle("Stock Unavailable");
+        alert.setHeaderText("Cannot Add to Cart");
+        alert.setContentText(String.format("Product '%s': %s", product.getDescription(), message));
+        alert.showAndWait();
+    }
+    
+    private void showErrorDialog(String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle("Error");
+        alert.setHeaderText("Operation Failed");
+        alert.setContentText(message);
+        alert.showAndWait();
     }
 
     private void updateProductGridResponsive(ObservableList<Product> products, double width) {

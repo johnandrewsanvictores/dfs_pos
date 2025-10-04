@@ -41,12 +41,69 @@ public class POSView extends BorderPane {
     private final VBox skeletonBox = new VBox();
     private HBox mainContent;
     
+    // Cart session transaction ID - shared across all cart items until checkout
+    private String currentTransactionId = generateReadableTransactionId();
+    
     // Barcode scanning fields
     private StringBuilder barcodeBuffer = new StringBuilder();
     private AtomicLong lastKeystrokeTime = new AtomicLong(0);
     private int fastKeystrokeCount = 0; // Count of consecutive fast keystrokes
     private ProductCatalogView productCatalog; // Store reference for barcode searches
     private PaymentSectionView paymentSection; // Store reference for returns mode
+    
+    /**
+     * Generate a readable transaction ID in format: TXN-YYYYMMDD-HHMMSS-XXX
+     * Example: TXN-20241005-143022-A4B
+     */
+    private String generateReadableTransactionId() {
+        LocalDateTime now = LocalDateTime.now();
+        DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+        String timestamp = now.format(dateFormat);
+        // Add 3 random alphanumeric characters for uniqueness
+        String randomSuffix = String.format("%03X", (int)(Math.random() * 4096));
+        return "TXN-" + timestamp + "-" + randomSuffix;
+    }
+    
+    /**
+     * Get the current transaction ID for this cart session
+     */
+    public String getCurrentTransactionId() {
+        return currentTransactionId;
+    }
+    
+    /**
+     * Reset transaction ID after successful checkout
+     */
+    public void resetTransactionId() {
+        this.currentTransactionId = generateReadableTransactionId();
+        System.out.println("New transaction ID generated: " + currentTransactionId);
+    }
+    
+    /**
+     * Release all stock reservations for the current cart session.
+     * Called when logging out or closing the application.
+     */
+    public void releaseAllCartReservations() {
+        if (cart.isEmpty()) {
+            return; // No items in cart, nothing to release
+        }
+        
+        try (java.sql.Connection conn = pos.db.DBConnection.getConnection()) {
+            // Collect all unique transaction IDs from cart
+            List<String> transactionIds = cart.stream()
+                .map(CartItem::getTransactionId)
+                .distinct()
+                .collect(java.util.stream.Collectors.toList());
+            
+            if (!transactionIds.isEmpty()) {
+                int released = pos.db.StockReservationDAO.clearReservationsByTransactions(conn, transactionIds);
+                System.out.println("Released " + released + " stock reservations for " + transactionIds.size() + " transaction(s)");
+            }
+        } catch (Exception e) {
+            System.err.println("Error releasing cart reservations: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
 
     public POSView(Runnable onLogout, String cashierName, int staffId) {
         this.onLogout = onLogout;
@@ -87,9 +144,9 @@ public class POSView extends BorderPane {
             products = loadProductsTask.getValue().toArray(new Product[0]);
             // Build main content
             mainContent = new HBox(10);
-            productCatalog = new ProductCatalogView(products, cart); // Store reference
+            productCatalog = new ProductCatalogView(products, cart, this); // Pass POSView for transaction ID
             CartView cartView = new CartView(cart, productCatalog.getProductQuantityLabels());
-            paymentSection = new PaymentSectionView(cart, products, productCatalog::refreshAfterCheckout, staffId, cashierName, dateLabel, timeLabel);
+            paymentSection = new PaymentSectionView(cart, products, productCatalog::refreshAfterCheckout, staffId, cashierName, dateLabel, timeLabel, this);
             
             // Set up returns mode toggle
             paymentSection.setOnReturnsModeToggle(() -> toggleReturnsMode(paymentSection, cartView));
@@ -126,6 +183,9 @@ public class POSView extends BorderPane {
         }));
         clock.setCycleCount(Timeline.INDEFINITE);
         clock.play();
+        
+        // Setup periodic cleanup of expired reservations (every 5 minutes)
+        setupReservationCleanupTask();
     }
 
     public Label getDateLabel() {
@@ -148,6 +208,8 @@ public class POSView extends BorderPane {
         Button logoutBtn = new Button("Log Out");
         logoutBtn.setStyle("-fx-background-color: #d32f2f; -fx-text-fill: white; -fx-font-size: 14px; -fx-background-radius: 5;");
         logoutBtn.setOnAction(e -> {
+            // Release all cart reservations before logging out
+            releaseAllCartReservations();
             if (onLogout != null) onLogout.run();
         });
         HBox rightBox = new HBox(15, cashier, logoutBtn);
@@ -391,5 +453,60 @@ public class POSView extends BorderPane {
                 HBox.setHgrow(productCatalog, Priority.ALWAYS);
             }
         }
+    }
+    
+    /**
+     * Setup a periodic task to clean up expired stock reservations.
+     * Runs every 5 minutes to free up reserved stock that has expired.
+     */
+    private void setupReservationCleanupTask() {
+        Timeline cleanupTimeline = new Timeline(new KeyFrame(Duration.minutes(5), event -> {
+            // Run cleanup in background thread to avoid blocking UI
+            Task<Integer> cleanupTask = new Task<>() {
+                @Override
+                protected Integer call() throws Exception {
+                    try (java.sql.Connection conn = pos.db.DBConnection.getConnection()) {
+                        return pos.db.StockReservationDAO.cleanupExpiredReservations(conn);
+                    }
+                }
+            };
+            
+            cleanupTask.setOnSucceeded(e -> {
+                Integer cleaned = cleanupTask.getValue();
+                if (cleaned != null && cleaned > 0) {
+                    System.out.println("Cleaned up " + cleaned + " expired stock reservations");
+                }
+            });
+            
+            cleanupTask.setOnFailed(e -> {
+                Throwable exception = cleanupTask.getException();
+                System.err.println("Failed to cleanup expired reservations: " + exception.getMessage());
+                exception.printStackTrace();
+            });
+            
+            new Thread(cleanupTask).start();
+        }));
+        
+        cleanupTimeline.setCycleCount(Timeline.INDEFINITE);
+        cleanupTimeline.play();
+        
+        // Also run an initial cleanup when the app starts
+        Task<Integer> initialCleanupTask = new Task<>() {
+            @Override
+            protected Integer call() throws Exception {
+                try (java.sql.Connection conn = pos.db.DBConnection.getConnection()) {
+                    return pos.db.StockReservationDAO.cleanupExpiredReservations(conn);
+                }
+            }
+        };
+        
+        initialCleanupTask.setOnSucceeded(e -> {
+            Integer cleaned = initialCleanupTask.getValue();
+            if (cleaned != null && cleaned > 0) {
+                System.out.println("Initial cleanup: Removed " + cleaned + " expired reservations");
+            }
+        });
+        
+        new Thread(initialCleanupTask).start();
     }
 } 

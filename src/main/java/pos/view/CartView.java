@@ -225,10 +225,23 @@ public class CartView extends VBox {
         CartItem item = cartTable.getItems().get(index);
         Product product = item.getProduct();
         
-        if (canAddToCart(product)) {
-            incrementCartItem(item, product);
-        } else {
-            showOutOfStockDialog(product);
+        // OPTIMIZED: Use single upsert query
+        try (java.sql.Connection conn = pos.db.DBConnection.getConnection()) {
+            int newQty = item.getQuantity() + 1;
+            
+            // Single query: check stock and update/insert reservation
+            boolean success = pos.db.StockReservationDAO.upsertReservation(
+                conn, item.getTransactionId(), product.getSku(), newQty);
+            
+            if (success) {
+                incrementCartItem(item, product);
+            }
+        } catch (java.sql.SQLException e) {
+            // Show user-friendly error from SQL exception
+            showStockUnavailableDialog(product, e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            showErrorDialog("Failed to update cart: " + e.getMessage());
         }
     }
 
@@ -237,7 +250,19 @@ public class CartView extends VBox {
         Product product = item.getProduct();
         
         if (canDecrementCartItem(item)) {
-            decrementCartItem(item, product);
+            // OPTIMIZED: Use single upsert query
+            try (java.sql.Connection conn = pos.db.DBConnection.getConnection()) {
+                int newQty = item.getQuantity() - 1;
+                
+                // Single query: update reservation quantity
+                pos.db.StockReservationDAO.upsertReservation(
+                    conn, item.getTransactionId(), product.getSku(), newQty);
+                
+                decrementCartItem(item, product);
+            } catch (Exception e) {
+                e.printStackTrace();
+                showErrorDialog("Failed to update cart: " + e.getMessage());
+            }
         }
     }
 
@@ -245,7 +270,18 @@ public class CartView extends VBox {
         CartItem item = cartTable.getItems().get(index);
         Product product = item.getProduct();
         
-        removeCartItem(item, product);
+        // OPTIMIZED: Single query delete by transaction_id + SKU
+        try (java.sql.Connection conn = pos.db.DBConnection.getConnection()) {
+            // Release the reservation
+            pos.db.StockReservationDAO.removeReservation(
+                conn, item.getTransactionId(), product.getSku());
+            
+            removeCartItem(item, product);
+        } catch (Exception e) {
+            e.printStackTrace();
+            // Still remove from cart even if reservation release fails
+            removeCartItem(item, product);
+        }
     }
 
     private boolean canAddToCart(Product product) {
@@ -310,6 +346,22 @@ public class CartView extends VBox {
         alert.setContentText(String.format("The product '%s' is out of stock. Cannot add more items to cart.", 
                                           product.getSku()));
         return alert;
+    }
+    
+    private void showStockUnavailableDialog(Product product, String message) {
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.setTitle("Stock Unavailable");
+        alert.setHeaderText("Cannot Add More Items");
+        alert.setContentText(String.format("Product '%s': %s", product.getSku(), message));
+        alert.showAndWait();
+    }
+    
+    private void showErrorDialog(String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle("Error");
+        alert.setHeaderText("Operation Failed");
+        alert.setContentText(message);
+        alert.showAndWait();
     }
 
     public void setupCartListeners(Label subtotalSummary, Label totalSummary) {

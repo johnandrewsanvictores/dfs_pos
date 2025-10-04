@@ -138,6 +138,12 @@ public class App extends Application {
             if (!stage.isMaximized()) {
                 stage.setMaximized(true);
             }
+            
+            // Handle window close event - release all cart reservations
+            stage.setOnCloseRequest(event -> {
+                System.out.println("Application closing - releasing cart reservations...");
+                posView.releaseAllCartReservations();
+            });
         });
     }
     

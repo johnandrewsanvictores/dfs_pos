@@ -85,11 +85,13 @@ public class PaymentSectionView extends VBox {
     private Label changeLabel; // Add changeLabel as a field
     private Button completePaymentBtn;
     private Button processReturnsButton; // Reference to the returns button
+    private POSView posView; // Reference to POSView for transaction ID management
 
-    public PaymentSectionView(ObservableList<CartItem> cart, Product[] products, Runnable onPaymentCompleted, int staffId, String cashierName, Label dateLabel, Label timeLabel) {
+    public PaymentSectionView(ObservableList<CartItem> cart, Product[] products, Runnable onPaymentCompleted, int staffId, String cashierName, Label dateLabel, Label timeLabel, POSView posView) {
         this.staffId = staffId;
         this.cashierName = cashierName;
         this.returnsManager = new ReturnsManager();
+        this.posView = posView; // Store POSView reference
         
         initializeComponent();
         initializePromotionsAndVAT();
@@ -1129,6 +1131,9 @@ public class PaymentSectionView extends VBox {
             insertSaleItems(conn, cart, transactionData.posTransactionId);
             updateInventory(conn, cart);
             
+            // Release/confirm reservations after successful sale
+            confirmCartReservations(conn, cart);
+            
             conn.commit();
             
             showSuccessAndReset(cart, paid, total, paymentMethod.getValue(), onPaymentCompleted, 
@@ -1270,6 +1275,34 @@ public class PaymentSectionView extends VBox {
             e.printStackTrace();
         }
     }
+    
+    /**
+     * OPTIMIZED: Clear all cart reservations after successful checkout using transaction IDs.
+     * Single or batched DELETE query based on number of unique transaction IDs.
+     */
+    private void confirmCartReservations(java.sql.Connection conn, ObservableList<CartItem> cart) {
+        try {
+            // Collect unique transaction IDs from cart
+            List<String> transactionIds = cart.stream()
+                .map(CartItem::getTransactionId)
+                .distinct()
+                .collect(java.util.stream.Collectors.toList());
+            
+            if (transactionIds.isEmpty()) {
+                return;
+            }
+            
+            // Single optimized query to clear all reservations
+            int releasedCount = pos.db.StockReservationDAO.clearReservationsByTransactions(conn, transactionIds);
+            System.out.println("Released " + releasedCount + " stock reservations after checkout");
+            
+        } catch (Exception e) {
+            // Log error but don't fail the transaction
+            // Reservations will expire automatically after 15 minutes
+            System.err.println("Warning: Failed to release reservations: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
 
     private void showSuccessAndReset(ObservableList<CartItem> cart, double paid, double total, String paymentMethodValue,
                                    Runnable onPaymentCompleted, TextField amountField, Label changeLabel,
@@ -1291,6 +1324,9 @@ public class PaymentSectionView extends VBox {
         refNoField.clear();
         refNoBox.setVisible(false);
         refNoBox.setManaged(false);
+        
+        // Reset transaction ID for next cart session
+        posView.resetTransactionId();
     }
 
     private void rollbackTransaction(java.sql.Connection conn, Exception ex, Label errorLabel) {
