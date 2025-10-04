@@ -1,12 +1,87 @@
-POS SYTEM:
-    ☐ request to the database of new product every 2mins @critical 
-    ☐ optimize the loading from sign in @low 
-
+POS SYSTEM:
+    REAL-TIME SYNC & STOCK MANAGEMENT:
+        ☐ Implement background product polling (every 60 seconds) @critical @high
+        ☐ Add version tracking for efficient product sync @critical @high
+        ☐ Create stock reservation system (reserve when adding to cart) @critical @high
+        ☐ Implement real-time stock validation before checkout @critical @high
+        ☐ Add reservation release on cart clear/cancel @critical @high
+        ☐ Create StockReservationService in Java backend @critical @high
+        ☐ Add reservation cleanup scheduler (auto-release expired) @critical @medium
+        ☐ Update ProductDAO to use available stock (stock_available - stock_reserved) @critical @high
+        ☐ Add terminal ID tracking for reservations @medium
+        ☐ Handle reservation errors (network failure, timeout) @high
+    
+    UI/UX IMPROVEMENTS:
+        ☐ Show stock availability indicator in product catalog @medium
+        ☐ Display "Verifying stock..." loader when adding to cart @low
+        ☐ Add "Stock updated" notification when sync completes @low
+        ☐ optimize the loading from sign in @low 
+    
     RETURNS MODE:
-        ☐ insert it in sales report transaction table in db to show it @today 
+        ✔ insert it in sales report transaction table in db to show it @today @done (9/30/2025, 7:01:14 AM)
         ✔ add  a scanner when adding product to be return @today @done (9/24/2025, 7:51:13 PM)
 
+DATABASE (phpMyAdmin):
+    ☐ Run database_schema_reservation.sql to create tables @critical @today
+    ☐ Verify stock_reservations table created successfully @critical @today
+    ☐ Verify products.stock_reserved column added @critical @today
+    ☐ Test stored procedures (sp_create_reservation, sp_complete_reservation) @critical @today
+    ☐ Enable MySQL Event Scheduler for auto-cleanup @critical @today
+    ☐ Create database backup before implementing changes @critical @today
+    ☐ Test triggers (trg_reservation_insert, trg_reservation_update) @high
+    ☐ Verify sync_metadata table for version tracking @high
+
+WEBSITE (E-commerce - PHP):
+    STOCK RESERVATION:
+        ☐ Implement stock reservation on "Add to Cart" @critical @high
+        ☐ Call sp_create_reservation stored procedure from PHP @critical @high
+        ☐ Store reservation_id in session with cart items @critical @high
+        ☐ Set 15-minute reservation timeout (longer than POS) @critical @high
+        ☐ Release reservation on cart item removal @critical @high
+        ☐ Complete reservation on successful order checkout @critical @high
+        ☐ Auto-release on session timeout/destroy @high
+    
+    CART MANAGEMENT:
+        ☐ Show real-time stock availability on product pages @high
+        ☐ Display "Only X units available" message @medium
+        ☐ Handle "Out of stock" errors gracefully @high
+        ☐ Show reservation timer in cart (time remaining) @low
+        ☐ Add "Stock reserved for you" indicator @low
+    
+    CRON JOBS:
+        ☐ Create cron job to cleanup abandoned carts (older than 24 hours) @medium
+        ☐ Monitor reservation table size and archive old records @low
+
+JAVA BACKEND (REST API):
+    ☐ Create StockReservationDAO.java @critical @high
+    ☐ Create StockReservationService.java with reserve/release/complete methods @critical @high
+    ☐ Add /api/reservations/create endpoint @critical @high
+    ☐ Add /api/reservations/{id}/complete endpoint @critical @high
+    ☐ Add /api/reservations/{id}/release endpoint @critical @high
+    ☐ Add /api/products/version endpoint (for polling) @critical @high
+    ☐ Update /api/products endpoint to return available stock @critical @high
+    ☐ Add scheduled task for expired reservation cleanup @high
+    ☐ Implement error handling for reservation conflicts @high
+
+TESTING:
+    ☐ Test POS add to cart with low stock @critical
+    ☐ Test website and POS trying to buy same last item @critical
+    ☐ Test reservation expiry (10 min for POS, 15 min for website) @critical
+    ☐ Test auto-cleanup of expired reservations @high
+    ☐ Test reservation release on cart cancel @high
+    ☐ Stress test: Multiple simultaneous reservations @medium
+    ☐ Test network failure during reservation @medium
+    ☐ Verify triggers updating stock_reserved correctly @high
+
 STORE MANAGEMENT SYSTEM:
-    ☐ display the returns from the POS SYSTEM in sales report page @today 
-    ☐ create a new page for returns of pos system
+    ☐ Add "Stock Reservations" monitoring page @medium
+    ☐ Show active reservations (POS vs Website) @medium
+    ☐ Add manual reservation release for admin @low
+    ✔ display the returns from the POS SYSTEM in sales report page @today @done (9/30/2025, 7:01:28 AM)
+    ✔ create a new page for returns of pos system @done (9/30/2025, 7:01:24 AM)
+
+DOCUMENTATION:
+    ☐ Document reservation workflow for developers @low
+    ☐ Create API documentation for reservation endpoints @low
+    ☐ Write user manual for stock management @low
     
