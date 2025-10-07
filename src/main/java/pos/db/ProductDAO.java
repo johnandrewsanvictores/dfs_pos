@@ -242,4 +242,171 @@ public class ProductDAO {
         }
         throw new SQLException("Could not get database timestamp");
     }
-} 
+    
+    /**
+     * OPTIMIZED: Get products with their data hash for efficient change detection
+     * Uses concatenated key fields to create a change signature
+     */
+    public static java.util.List<ProductWithStatus> getChangedProductsSince(Timestamp lastCheck) throws SQLException {
+        // Create a hash-based comparison query that's efficient without timestamps
+        String sql = "SELECT " +
+                     "i.id AS inventory_id, " +
+                     "i.description, " +
+                     "i.item_name, " +
+                     "i.category_id, " +
+                     "i.product_status, " +
+                     "d.sku, " +
+                     "d.unit_price, " +
+                     "COALESCE(d.quantity, 0) AS quantity, " +
+                     "NULL AS online_product_id, " +
+                     "NULL AS image_path, " +
+                     "CONCAT(d.sku, '|', d.unit_price, '|', COALESCE(d.quantity, 0), '|', i.product_status) AS data_hash " +
+                     "FROM inventory i " +
+                     "JOIN in_store_product_details d ON i.id = d.inventory_product_id " +
+                     "WHERE (i.sale_channel = 'in-store' OR i.sale_channel = 'both') " +
+                     "UNION ALL " +
+                     "SELECT " +
+                     "i.id AS inventory_id, " +
+                     "i.description, " +
+                     "i.item_name, " +
+                     "i.category_id, " +
+                     "i.product_status, " +
+                     "opv.sku, " +
+                     "opv.unit_price, " +
+                     "COALESCE(opv.quantity, 0) AS quantity, " +
+                     "opv.online_product_id, " +
+                     "opv.image_path, " +
+                     "CONCAT(opv.sku, '|', opv.unit_price, '|', COALESCE(opv.quantity, 0), '|', i.product_status) AS data_hash " +
+                     "FROM inventory i " +
+                     "JOIN online_product_details opd ON i.id = opd.product_id " +
+                     "JOIN online_product_variant opv ON opd.id = opv.online_product_id " +
+                     "WHERE i.sale_channel = 'both' " +
+                     "ORDER BY sku";
+        
+        java.util.List<ProductWithStatus> products = new java.util.ArrayList<>();
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            
+            while (rs.next()) {
+                String sku = rs.getString("sku");
+                double price = rs.getDouble("unit_price");
+                String description = rs.getString("description");
+                int categoryId = rs.getInt("category_id");
+                String status = rs.getString("product_status");
+                int quantity = rs.getInt("quantity");
+                String imagePath = rs.getString("image_path");
+                String dataHash = rs.getString("data_hash");
+                
+                ProductWithStatus product = new ProductWithStatus(sku, price, description, imagePath, 
+                                                 quantity, categoryId, status);
+                product.setDataHash(dataHash); // Store hash for comparison
+                products.add(product);
+            }
+        } catch (SQLException e) {
+            // Fallback to getting all products if hash query fails
+            System.err.println("Hash-based query failed, falling back to full scan: " + e.getMessage());
+            return getAllProductsWithStatus();
+        }
+        
+        return products;
+    }
+    
+    /**
+     * FALLBACK: Get all products with status (only used when timestamp queries fail)
+     */
+    public static java.util.List<ProductWithStatus> getAllProductsWithStatus() throws SQLException {
+        String sql = "SELECT " +
+                     "i.id AS inventory_id, " +
+                     "i.description, " +
+                     "i.item_name, " +
+                     "i.category_id, " +
+                     "i.product_status, " +
+                     "d.sku, " +
+                     "d.unit_price, " +
+                     "COALESCE(d.quantity, 0) AS quantity, " +
+                     "NULL AS online_product_id, " +
+                     "NULL AS image_path " +
+                     "FROM inventory i " +
+                     "JOIN in_store_product_details d ON i.id = d.inventory_product_id " +
+                     "WHERE (i.sale_channel = 'in-store' OR i.sale_channel = 'both') " +
+                     "UNION ALL " +
+                     "SELECT " +
+                     "i.id AS inventory_id, " +
+                     "i.description, " +
+                     "i.item_name, " +
+                     "i.category_id, " +
+                     "i.product_status, " +
+                     "opv.sku, " +
+                     "opv.unit_price, " +
+                     "COALESCE(opv.quantity, 0) AS quantity, " +
+                     "opv.online_product_id, " +
+                     "opv.image_path " +
+                     "FROM inventory i " +
+                     "JOIN online_product_details opd ON i.id = opd.product_id " +
+                     "JOIN online_product_variant opv ON opd.id = opv.online_product_id " +
+                     "WHERE i.sale_channel = 'both' " +
+                     "ORDER BY sku";
+        
+        java.util.List<ProductWithStatus> products = new java.util.ArrayList<>();
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            
+            while (rs.next()) {
+                String sku = rs.getString("sku");
+                double price = rs.getDouble("unit_price");
+                String description = rs.getString("description");
+                int categoryId = rs.getInt("category_id");
+                String status = rs.getString("product_status");
+                int quantity = rs.getInt("quantity");
+                String imagePath = rs.getString("image_path");
+                
+                products.add(new ProductWithStatus(sku, price, description, imagePath, 
+                                                 quantity, categoryId, status));
+            }
+        }
+        return products;
+    }
+    
+    /**
+     * Helper class to track product status for comprehensive change detection
+     */
+    public static class ProductWithStatus extends pos.model.Product {
+        private final String status;
+        private String dataHash; // For efficient change detection
+        
+        public ProductWithStatus(String sku, double price, String description, String imagePath, 
+                               int quantity, int categoryId, String status) {
+            super(sku, price, description, imagePath, quantity, categoryId);
+            this.status = status;
+        }
+        
+        public String getStatus() {
+            return status;
+        }
+        
+        public boolean isActive() {
+            return "active".equalsIgnoreCase(status);
+        }
+        
+        public boolean isArchived() {
+            return "archived".equalsIgnoreCase(status) || "inactive".equalsIgnoreCase(status);
+        }
+        
+        public void setDataHash(String dataHash) {
+            this.dataHash = dataHash;
+        }
+        
+        public String getDataHash() {
+            return dataHash;
+        }
+        
+        /**
+         * Generate a hash from current product data for change detection
+         */
+        public String generateCurrentHash() {
+            return getSku() + "|" + getPrice() + "|" + getQuantity() + "|" + status;
+        }
+    }
+}

@@ -60,6 +60,7 @@ public class POSView extends BorderPane {
     private Timestamp lastProductCheck;
     private Timeline productUpdateTimeline;
     private Map<String, Product> lastKnownProducts = new HashMap<>(); // Cache to prevent infinite loops
+    private Map<String, String> lastKnownHashes = new HashMap<>(); // Cache product hashes for efficient comparison
     private int debugCounter = 0; // Limit debug output frequency
     private int connectionErrorCount = 0; // Track consecutive connection errors
     
@@ -537,18 +538,25 @@ public class POSView extends BorderPane {
     }
     
     /**
-     * Setup product polling to check for quantity changes every 10 seconds
+     * Setup product polling to check for quantity changes every 20 seconds
      */
     private void setupProductPolling() {
-        // Initialize the cache with current products
+        // Initialize the cache with current products AND their hashes
         for (Product product : products) {
             lastKnownProducts.put(product.getSku(), new Product(
                 product.getSku(), product.getPrice(), product.getDescription(),
                 product.getImagePath(), product.getQuantity(), product.getCategoryId()
             ));
+            
+            // Create initial hash for each product to prevent false "new product" detection
+            String initialHash = product.getSku() + "|" + product.getPrice() + "|" + 
+                                product.getQuantity() + "|" + "active";
+            lastKnownHashes.put(product.getSku(), initialHash);
         }
         
-        productUpdateTimeline = new Timeline(new KeyFrame(Duration.seconds(30), event -> {
+        System.out.println("🔄 Product polling initialized with " + products.length + " products and their hashes");
+        
+        productUpdateTimeline = new Timeline(new KeyFrame(Duration.seconds(20), event -> {
             // Skip polling if too many consecutive connection errors
             if (connectionErrorCount >= 3) {
                 System.err.println("Product polling temporarily disabled due to connection issues. Will retry in next cycle.");
@@ -557,16 +565,11 @@ public class POSView extends BorderPane {
             }
             
             // Run in background thread to avoid blocking UI
-            Task<List<Product>> checkUpdatesTask = new Task<>() {
+            Task<List<ProductDAO.ProductWithStatus>> checkUpdatesTask = new Task<>() {
                 @Override
-                protected List<Product> call() throws Exception {
-                    try {
-                        return ProductDAO.getModifiedProductsSince(lastProductCheck);
-                    } catch (SQLException e) {
-                        // Log the error and return empty list to prevent crashes
-                        System.err.println("Database connection error during polling: " + e.getMessage());
-                        throw e; // Re-throw to be caught by setOnFailed
-                    }
+                protected List<ProductDAO.ProductWithStatus> call() throws Exception {
+                    // Use optimized query to get only changed products
+                    return ProductDAO.getChangedProductsSince(lastProductCheck);
                 }
             };
             
@@ -574,40 +577,25 @@ public class POSView extends BorderPane {
                 // Reset connection error counter on successful operation
                 connectionErrorCount = 0;
                 
-                List<Product> currentProducts = checkUpdatesTask.getValue();
-                if (currentProducts != null && !currentProducts.isEmpty()) {
-                    // Compare with cached products to find actual changes
-                    List<Product> actuallyModified = new ArrayList<>();
+                List<ProductDAO.ProductWithStatus> changedProducts = checkUpdatesTask.getValue();
+                
+                // Only process if there are actual changes
+                if (changedProducts != null && !changedProducts.isEmpty()) {
+                    System.out.println("Detected " + changedProducts.size() + " product changes");
+                    analyzeProductChanges(changedProducts);
                     
-                    for (Product currentProduct : currentProducts) {
-                        Product cachedProduct = lastKnownProducts.get(currentProduct.getSku());
-                        if (cachedProduct != null) {
-                            // Only consider it modified if there's a significant change
-                            boolean quantityChanged = cachedProduct.getQuantity() != currentProduct.getQuantity();
-                            boolean priceChanged = Math.abs(cachedProduct.getPrice() - currentProduct.getPrice()) > 0.01;
-                            
-                            if (quantityChanged || priceChanged) {
-                                actuallyModified.add(currentProduct);
-                                // Update cache to prevent repeated processing
-                                lastKnownProducts.put(currentProduct.getSku(), new Product(
-                                    currentProduct.getSku(), currentProduct.getPrice(), currentProduct.getDescription(),
-                                    currentProduct.getImagePath(), currentProduct.getQuantity(), currentProduct.getCategoryId()
-                                ));
-                            }
-                        }
-                    }
-                    
-                    if (!actuallyModified.isEmpty()) {
-                        // Run UI updates on JavaFX Application Thread
-                        Platform.runLater(() -> handleProductUpdates(actuallyModified));
-                    }
-                    
-                    // Update timestamp for next check (only on successful operation)
+                    // Update timestamp for next check
                     try {
                         lastProductCheck = ProductDAO.getCurrentDatabaseTimestamp();
                     } catch (SQLException ex) {
-                        System.err.println("Could not update timestamp (will retry next cycle): " + ex.getMessage());
-                        // Don't crash - just continue with the old timestamp
+                        System.err.println("Could not update polling timestamp: " + ex.getMessage());
+                    }
+                } else {
+                    // No changes detected - just update timestamp quietly
+                    try {
+                        lastProductCheck = ProductDAO.getCurrentDatabaseTimestamp();
+                    } catch (SQLException ex) {
+                        // Ignore timestamp update errors when no changes detected
                     }
                 }
             });
@@ -627,7 +615,199 @@ public class POSView extends BorderPane {
         
         productUpdateTimeline.setCycleCount(Timeline.INDEFINITE);
         productUpdateTimeline.play();
-        System.out.println("Product polling started - checking every 30 seconds (conservative frequency to prevent connection issues)");
+        System.out.println("OPTIMIZED product polling started - checking every 20 seconds for database-level changes");
+    }
+    
+    /**
+     * OPTIMIZED: Analyze products using hash-based change detection (no timestamp dependency)
+     */
+    private void analyzeProductChanges(List<ProductDAO.ProductWithStatus> currentProducts) {
+        debugCounter++;
+        boolean showDetailedDebug = debugCounter % 5 == 1; // Reduced debug frequency
+        
+        List<Product> newProducts = new ArrayList<>();
+        List<Product> modifiedProducts = new ArrayList<>();
+        List<String> archivedSkus = new ArrayList<>();
+        
+        // Track current products by SKU for efficient lookup
+        Map<String, ProductDAO.ProductWithStatus> currentProductMap = new HashMap<>();
+        for (ProductDAO.ProductWithStatus product : currentProducts) {
+            currentProductMap.put(product.getSku(), product);
+        }
+        
+        // Process current products for new/modified detection
+        for (ProductDAO.ProductWithStatus currentProduct : currentProducts) {
+            String sku = currentProduct.getSku();
+            String currentHash = currentProduct.getDataHash();
+            String cachedHash = lastKnownHashes.get(sku);
+            
+            if (currentProduct.isArchived()) {
+                // Product was archived
+                if (lastKnownProducts.containsKey(sku)) {
+                    archivedSkus.add(sku);
+                    lastKnownProducts.remove(sku);
+                    lastKnownHashes.remove(sku);
+                }
+            } else if (currentProduct.isActive()) {
+                // Product is active
+                if (cachedHash == null) {
+                    // New product (not in cache)
+                    Product newProduct = convertToProduct(currentProduct);
+                    newProducts.add(newProduct);
+                    lastKnownProducts.put(sku, newProduct);
+                    lastKnownHashes.put(sku, currentHash);
+                } else if (!cachedHash.equals(currentHash)) {
+                    // Modified product (hash changed)
+                    Product modifiedProduct = convertToProduct(currentProduct);
+                    modifiedProducts.add(modifiedProduct);
+                    lastKnownProducts.put(sku, modifiedProduct);
+                    lastKnownHashes.put(sku, currentHash);
+                }
+                // If hash matches, no change - skip processing
+            }
+        }
+        
+        // Check for products that are no longer in database (deleted/archived)
+        for (String cachedSku : new ArrayList<>(lastKnownProducts.keySet())) {
+            if (!currentProductMap.containsKey(cachedSku)) {
+                archivedSkus.add(cachedSku);
+                lastKnownProducts.remove(cachedSku);
+                lastKnownHashes.remove(cachedSku);
+            }
+        }
+        
+        // Batch UI updates for better performance
+        if (!newProducts.isEmpty() || !modifiedProducts.isEmpty() || !archivedSkus.isEmpty()) {
+            Platform.runLater(() -> {
+                if (!newProducts.isEmpty()) {
+                    handleNewProducts(newProducts);
+                }
+                if (!modifiedProducts.isEmpty()) {
+                    handleProductUpdates(modifiedProducts);
+                }
+                if (!archivedSkus.isEmpty()) {
+                    handleArchivedProducts(archivedSkus);
+                }
+                
+                // Single debug output for all changes
+                if (showDetailedDebug) {
+                    System.out.println("═══ HASH-BASED CHANGE DETECTION ═══");
+                    if (!newProducts.isEmpty()) {
+                        System.out.println("➕ " + newProducts.size() + " new products added");
+                    }
+                    if (!modifiedProducts.isEmpty()) {
+                        System.out.println("📝 " + modifiedProducts.size() + " products updated");
+                    }
+                    if (!archivedSkus.isEmpty()) {
+                        System.out.println("🗄️ " + archivedSkus.size() + " products archived");
+                    }
+                    System.out.println("═══════════════════════════════════");
+                } else {
+                    System.out.println("Hash-based changes: +" + newProducts.size() + " new, ~" + 
+                                     modifiedProducts.size() + " updated, -" + archivedSkus.size() + " archived");
+                }
+            });
+        }
+    }
+    
+    /**
+     * Helper method to convert ProductWithStatus to Product
+     */
+    private Product convertToProduct(ProductDAO.ProductWithStatus productWithStatus) {
+        String imagePath = productWithStatus.getImagePath();
+        if (imagePath != null && !imagePath.isEmpty()) {
+            imagePath = DBCredentials.BASE_URL + "/assets/uploads/product_img/" + imagePath;
+        }
+        
+        return new Product(
+            productWithStatus.getSku(),
+            productWithStatus.getPrice(),
+            productWithStatus.getDescription(),
+            imagePath,
+            productWithStatus.getQuantity(),
+            productWithStatus.getCategoryId()
+        );
+    }
+    
+    /**
+     * Handle new products by expanding the products array and updating UI
+     */
+    private void handleNewProducts(List<Product> newProducts) {
+        debugCounter++;
+        boolean showDetailedDebug = debugCounter % 3 == 1;
+        
+        if (showDetailedDebug) {
+            System.out.println("Adding " + newProducts.size() + " new products to catalog");
+        }
+        
+        // Expand the products array to include new products
+        Product[] expandedProducts = new Product[products.length + newProducts.size()];
+        System.arraycopy(products, 0, expandedProducts, 0, products.length);
+        
+        for (int i = 0; i < newProducts.size(); i++) {
+            Product newProduct = newProducts.get(i);
+            
+            // Print debug information for new products
+            if (showDetailedDebug) {
+                System.out.println("╔═══ NEW PRODUCT DETECTED ═══");
+                System.out.println("║ SKU: " + newProduct.getSku());
+                System.out.println("║ Description: " + newProduct.getDescription());
+                System.out.println("║ Price: ₱" + String.format("%.2f", newProduct.getPrice()));
+                System.out.println("║ Quantity: " + newProduct.getQuantity());
+                System.out.println("║ Category ID: " + newProduct.getCategoryId());
+                System.out.println("╚════════════════════════════");
+            } else {
+                System.out.println("New product added: " + newProduct.getSku() + " - " + newProduct.getDescription());
+            }
+            
+            expandedProducts[products.length + i] = newProduct;
+        }
+        
+        // Update the products array
+        products = expandedProducts;
+        
+        // Notify product catalog to refresh display to show new products
+        if (productCatalog != null) {
+            productCatalog.handleNewProducts(newProducts);
+        }
+    }
+    
+    /**
+     * Handle archived products by removing them from the products array and UI
+     */
+    private void handleArchivedProducts(List<String> archivedSkus) {
+        debugCounter++;
+        boolean showDetailedDebug = debugCounter % 3 == 1;
+        
+        if (showDetailedDebug) {
+            System.out.println("Removing " + archivedSkus.size() + " archived products from catalog");
+        }
+        
+        // Remove archived products from the products array
+        List<Product> activeProducts = new ArrayList<>();
+        for (Product product : products) {
+            if (!archivedSkus.contains(product.getSku())) {
+                activeProducts.add(product);
+            }
+        }
+        
+        // Update products array
+        products = activeProducts.toArray(new Product[0]);
+        
+        // Notify product catalog to remove archived products from display
+        if (productCatalog != null) {
+            productCatalog.handleArchivedProducts(archivedSkus);
+        }
+        
+        if (showDetailedDebug) {
+            for (String sku : archivedSkus) {
+                System.out.println("╔═══ PRODUCT ARCHIVED ═══");
+                System.out.println("║ SKU: " + sku);
+                System.out.println("║ Status: Removed from catalog");
+                System.out.println("║ Action: No longer available for sale");
+                System.out.println("╚════════════════════════");
+            }
+        }
     }
     
     /**

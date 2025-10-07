@@ -622,6 +622,62 @@ public class ProductCatalogView extends VBox {
         }
     }
     
+    /**
+     * Handle new products being added to the system
+     */
+    public void handleNewProducts(java.util.List<Product> newProducts) {
+        // Add new products to the arrays
+        Product[] expandedAllProducts = new Product[allProducts.length + newProducts.size()];
+        System.arraycopy(allProducts, 0, expandedAllProducts, 0, allProducts.length);
+        
+        for (int i = 0; i < newProducts.size(); i++) {
+            expandedAllProducts[allProducts.length + i] = newProducts.get(i);
+        }
+        
+        allProducts = expandedAllProducts;
+        
+        // Refresh the display to show new products
+        refreshView();
+        
+        System.out.println("Product catalog updated with " + newProducts.size() + " new products");
+    }
+    
+    /**
+     * Handle archived products being removed from the system
+     */
+    public void handleArchivedProducts(java.util.List<String> archivedSkus) {
+        // Remove archived products from allProducts array
+        java.util.List<Product> activeProducts = new java.util.ArrayList<>();
+        for (Product product : allProducts) {
+            if (!archivedSkus.contains(product.getSku())) {
+                activeProducts.add(product);
+            } else {
+                // Clean up label mappings for archived products
+                productQuantityLabels.remove(product);
+                productPriceLabels.remove(product);
+            }
+        }
+        
+        allProducts = activeProducts.toArray(new Product[0]);
+        
+        // Refresh the display to remove archived products
+        refreshView();
+        
+        System.out.println("Product catalog updated: removed " + archivedSkus.size() + " archived products");
+    }
+    
+    /**
+     * Refresh the entire view (used for major changes like adding/removing products)
+     */
+    private void refreshView() {
+        // Re-initialize filtered products with all active products
+        initializeFilteredProducts(allProducts);
+        // Reset to first page
+        currentPage = 1;
+        // Update the grid display
+        updateProductGridResponsive(filteredProducts, getWidth());
+    }
+    
     // Public method to allow barcode scanning to add products directly to cart
     public void addProductToCartDirectly(Product product) {
         addProductToCart(product);
