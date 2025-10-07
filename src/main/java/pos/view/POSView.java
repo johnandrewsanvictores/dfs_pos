@@ -14,6 +14,8 @@ import pos.db.DBCredentials;
 import pos.db.ProductDAO;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import javafx.animation.KeyFrame;
@@ -21,6 +23,9 @@ import javafx.animation.Timeline;
 import javafx.util.Duration;
 import javafx.concurrent.Task;
 import java.util.concurrent.atomic.AtomicLong;
+import java.sql.Timestamp;
+import java.sql.SQLException;
+import javafx.application.Platform;
 
 public class POSView extends BorderPane {
     // Barcode scanning constants
@@ -50,6 +55,13 @@ public class POSView extends BorderPane {
     private int fastKeystrokeCount = 0; // Count of consecutive fast keystrokes
     private ProductCatalogView productCatalog; // Store reference for barcode searches
     private PaymentSectionView paymentSection; // Store reference for returns mode
+    
+    // Product polling fields
+    private Timestamp lastProductCheck;
+    private Timeline productUpdateTimeline;
+    private Map<String, Product> lastKnownProducts = new HashMap<>(); // Cache to prevent infinite loops
+    private int debugCounter = 0; // Limit debug output frequency
+    private int connectionErrorCount = 0; // Track consecutive connection errors
     
     /**
      * Generate a readable transaction ID in format: TXN-YYYYMMDD-HHMMSS-XXX
@@ -142,6 +154,15 @@ public class POSView extends BorderPane {
         };
         loadProductsTask.setOnSucceeded(ev -> {
             products = loadProductsTask.getValue().toArray(new Product[0]);
+            
+            // Initialize last check timestamp
+            try {
+                lastProductCheck = ProductDAO.getCurrentDatabaseTimestamp();
+            } catch (Exception e) {
+                lastProductCheck = new Timestamp(System.currentTimeMillis());
+                System.err.println("Could not get DB timestamp, using system time: " + e.getMessage());
+            }
+            
             // Build main content
             mainContent = new HBox(10);
             productCatalog = new ProductCatalogView(products, cart, this); // Pass POSView for transaction ID
@@ -165,6 +186,9 @@ public class POSView extends BorderPane {
             
             // Setup global barcode listener after UI is ready
             setupGlobalBarcodeListener();
+            
+            // Setup product polling after UI is ready
+            setupProductPolling();
         });
         new Thread(loadProductsTask).start();
 
@@ -208,6 +232,8 @@ public class POSView extends BorderPane {
         Button logoutBtn = new Button("Log Out");
         logoutBtn.setStyle("-fx-background-color: #d32f2f; -fx-text-fill: white; -fx-font-size: 14px; -fx-background-radius: 5;");
         logoutBtn.setOnAction(e -> {
+            // Stop product polling timeline
+            dispose();
             // Release all cart reservations before logging out
             releaseAllCartReservations();
             if (onLogout != null) onLogout.run();
@@ -508,5 +534,182 @@ public class POSView extends BorderPane {
         });
         
         new Thread(initialCleanupTask).start();
+    }
+    
+    /**
+     * Setup product polling to check for quantity changes every 10 seconds
+     */
+    private void setupProductPolling() {
+        // Initialize the cache with current products
+        for (Product product : products) {
+            lastKnownProducts.put(product.getSku(), new Product(
+                product.getSku(), product.getPrice(), product.getDescription(),
+                product.getImagePath(), product.getQuantity(), product.getCategoryId()
+            ));
+        }
+        
+        productUpdateTimeline = new Timeline(new KeyFrame(Duration.seconds(30), event -> {
+            // Skip polling if too many consecutive connection errors
+            if (connectionErrorCount >= 3) {
+                System.err.println("Product polling temporarily disabled due to connection issues. Will retry in next cycle.");
+                connectionErrorCount = 0; // Reset counter to try again
+                return;
+            }
+            
+            // Run in background thread to avoid blocking UI
+            Task<List<Product>> checkUpdatesTask = new Task<>() {
+                @Override
+                protected List<Product> call() throws Exception {
+                    try {
+                        return ProductDAO.getModifiedProductsSince(lastProductCheck);
+                    } catch (SQLException e) {
+                        // Log the error and return empty list to prevent crashes
+                        System.err.println("Database connection error during polling: " + e.getMessage());
+                        throw e; // Re-throw to be caught by setOnFailed
+                    }
+                }
+            };
+            
+            checkUpdatesTask.setOnSucceeded(e -> {
+                // Reset connection error counter on successful operation
+                connectionErrorCount = 0;
+                
+                List<Product> currentProducts = checkUpdatesTask.getValue();
+                if (currentProducts != null && !currentProducts.isEmpty()) {
+                    // Compare with cached products to find actual changes
+                    List<Product> actuallyModified = new ArrayList<>();
+                    
+                    for (Product currentProduct : currentProducts) {
+                        Product cachedProduct = lastKnownProducts.get(currentProduct.getSku());
+                        if (cachedProduct != null) {
+                            // Only consider it modified if there's a significant change
+                            boolean quantityChanged = cachedProduct.getQuantity() != currentProduct.getQuantity();
+                            boolean priceChanged = Math.abs(cachedProduct.getPrice() - currentProduct.getPrice()) > 0.01;
+                            
+                            if (quantityChanged || priceChanged) {
+                                actuallyModified.add(currentProduct);
+                                // Update cache to prevent repeated processing
+                                lastKnownProducts.put(currentProduct.getSku(), new Product(
+                                    currentProduct.getSku(), currentProduct.getPrice(), currentProduct.getDescription(),
+                                    currentProduct.getImagePath(), currentProduct.getQuantity(), currentProduct.getCategoryId()
+                                ));
+                            }
+                        }
+                    }
+                    
+                    if (!actuallyModified.isEmpty()) {
+                        // Run UI updates on JavaFX Application Thread
+                        Platform.runLater(() -> handleProductUpdates(actuallyModified));
+                    }
+                    
+                    // Update timestamp for next check (only on successful operation)
+                    try {
+                        lastProductCheck = ProductDAO.getCurrentDatabaseTimestamp();
+                    } catch (SQLException ex) {
+                        System.err.println("Could not update timestamp (will retry next cycle): " + ex.getMessage());
+                        // Don't crash - just continue with the old timestamp
+                    }
+                }
+            });
+            
+            checkUpdatesTask.setOnFailed(e -> {
+                connectionErrorCount++;
+                Throwable exception = checkUpdatesTask.getException();
+                System.err.println("Product update check failed (attempt " + connectionErrorCount + "/3): " + exception.getMessage());
+                
+                if (connectionErrorCount >= 3) {
+                    System.err.println("Too many connection failures. Product polling will pause for one cycle.");
+                }
+            });
+            
+            new Thread(checkUpdatesTask).start();
+        }));
+        
+        productUpdateTimeline.setCycleCount(Timeline.INDEFINITE);
+        productUpdateTimeline.play();
+        System.out.println("Product polling started - checking every 30 seconds (conservative frequency to prevent connection issues)");
+    }
+    
+    /**
+     * Handle product updates by refreshing the products array and UI
+     */
+    private void handleProductUpdates(List<Product> modifiedProducts) {
+        debugCounter++;
+        
+        // Only show detailed debug every 3rd update to reduce console spam
+        boolean showDetailedDebug = debugCounter % 3 == 1;
+        
+        if (showDetailedDebug) {
+            System.out.println("Found " + modifiedProducts.size() + " modified products");
+        }
+        
+        // Update the products array
+        for (Product modifiedProduct : modifiedProducts) {
+            for (int i = 0; i < products.length; i++) {
+                if (products[i].getSku().equals(modifiedProduct.getSku())) {
+                    // Store old values for debugging
+                    Product oldProduct = products[i];
+                    
+                    // Update image path if needed
+                    String imagePath = modifiedProduct.getImagePath();
+                    if (imagePath != null && !imagePath.isEmpty()) {
+                        imagePath = DBCredentials.BASE_URL + "/assets/uploads/product_img/" + imagePath;
+                        modifiedProduct = new Product(
+                            modifiedProduct.getSku(), 
+                            modifiedProduct.getPrice(), 
+                            modifiedProduct.getDescription(), 
+                            imagePath, 
+                            modifiedProduct.getQuantity(), 
+                            modifiedProduct.getCategoryId()
+                        );
+                    }
+                    
+                    // Print detailed update information for debugging (limited frequency)
+                    if (showDetailedDebug) {
+                        System.out.println("╔═══ PRODUCT UPDATE DEBUG ═══");
+                        System.out.println("║ SKU: " + modifiedProduct.getSku());
+                        System.out.println("║ Description: " + modifiedProduct.getDescription());
+                        System.out.println("║ Old Quantity: " + oldProduct.getQuantity() + " → New Quantity: " + modifiedProduct.getQuantity());
+                        System.out.println("║ Old Price: $" + String.format("%.2f", oldProduct.getPrice()) + " → New Price: $" + String.format("%.2f", modifiedProduct.getPrice()));
+                        
+                        if (oldProduct.getQuantity() != modifiedProduct.getQuantity()) {
+                            int quantityChange = modifiedProduct.getQuantity() - oldProduct.getQuantity();
+                            System.out.println("║ Quantity Change: " + (quantityChange > 0 ? "+" : "") + quantityChange);
+                            if (modifiedProduct.getQuantity() <= 0) {
+                                System.out.println("║ ⚠️  WARNING: Product is now OUT OF STOCK!");
+                            } else if (modifiedProduct.getQuantity() <= 5) {
+                                System.out.println("║ ⚠️  WARNING: Low stock level!");
+                            }
+                        }
+                        if (Math.abs(oldProduct.getPrice() - modifiedProduct.getPrice()) > 0.01) {
+                            double priceChange = modifiedProduct.getPrice() - oldProduct.getPrice();
+                            System.out.println("║ Price Change: " + (priceChange > 0 ? "+$" : "-$") + String.format("%.2f", Math.abs(priceChange)));
+                        }
+                        System.out.println("╚═══════════════════════════");
+                    } else {
+                        // Simplified output for frequent updates
+                        System.out.println("Product update: " + modifiedProduct.getSku() + " (Qty: " + modifiedProduct.getQuantity() + ", Price: $" + String.format("%.2f", modifiedProduct.getPrice()) + ")");
+                    }
+                    
+                    products[i] = modifiedProduct;
+                    break;
+                }
+            }
+        }
+        
+        // Notify product catalog to refresh display if it exists
+        if (productCatalog != null) {
+            productCatalog.handleProductUpdates(modifiedProducts);
+        }
+    }
+    
+    /**
+     * Clean up timelines and resources when view is disposed
+     */
+    public void dispose() {
+        if (productUpdateTimeline != null) {
+            productUpdateTimeline.stop();
+            System.out.println("Product polling timeline stopped");
+        }
     }
 } 

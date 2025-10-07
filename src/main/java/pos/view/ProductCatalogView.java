@@ -40,6 +40,7 @@ public class ProductCatalogView extends VBox {
     private final GridPane productGrid = new GridPane();
     private final ObservableList<Product> filteredProducts = FXCollections.observableArrayList();
     private final Map<Product, Label> productQuantityLabels = new HashMap<>();
+    private final Map<Product, Label> productPriceLabels = new HashMap<>();
     private int currentPage = 1;
     private Label pageLabel;
     private Button prevPageBtn;
@@ -483,6 +484,7 @@ public class ProductCatalogView extends VBox {
     private Label createProductPriceLabel(Product product) {
         Label price = new Label(String.format("₱%.2f", product.getPrice()));
         price.setFont(new Font(13));
+        productPriceLabels.put(product, price); // Store reference for updates
         return price;
     }
 
@@ -554,6 +556,70 @@ public class ProductCatalogView extends VBox {
         );
         currentPage = 1;
         updateProductGridResponsive(filteredProducts, getWidth());
+    }
+    
+    /**
+     * Handle product updates from POSView polling system
+     * Updates the products array and refreshes the UI display
+     */
+    public void handleProductUpdates(java.util.List<Product> modifiedProducts) {
+        boolean needsUIRefresh = false;
+        
+        // Update the allProducts array
+        for (Product modifiedProduct : modifiedProducts) {
+            // Find and update in allProducts array
+            for (int i = 0; i < allProducts.length; i++) {
+                if (allProducts[i].getSku().equals(modifiedProduct.getSku())) {
+                    Product oldProduct = allProducts[i];
+                    allProducts[i] = modifiedProduct;
+                    
+                    // Update filtered products if it's currently displayed
+                    for (int j = 0; j < filteredProducts.size(); j++) {
+                        if (filteredProducts.get(j).getSku().equals(modifiedProduct.getSku())) {
+                            filteredProducts.set(j, modifiedProduct);
+                            needsUIRefresh = true;
+                            break;
+                        }
+                    }
+                    
+                    // Update quantity labels if they exist
+                    Label quantityLabel = productQuantityLabels.get(oldProduct);
+                    if (quantityLabel != null) {
+                        // Remove old mapping and add new one
+                        productQuantityLabels.remove(oldProduct);
+                        productQuantityLabels.put(modifiedProduct, quantityLabel);
+                        
+                        quantityLabel.setText("Available: " + modifiedProduct.getQuantity());
+                        
+                        // Update quantity label style based on stock level
+                        if (modifiedProduct.getQuantity() <= 0) {
+                            quantityLabel.setStyle("-fx-background-color: #f44336; -fx-text-fill: white; -fx-padding: 2 6; -fx-background-radius: 3;");
+                        } else if (modifiedProduct.getQuantity() <= 5) {
+                            quantityLabel.setStyle("-fx-background-color: #ff9800; -fx-text-fill: white; -fx-padding: 2 6; -fx-background-radius: 3;");
+                        } else {
+                            quantityLabel.setStyle("-fx-background-color: #4caf50; -fx-text-fill: white; -fx-padding: 2 6; -fx-background-radius: 3;");
+                        }
+                    }
+                    
+                    // Update price labels if they exist
+                    Label priceLabel = productPriceLabels.get(oldProduct);
+                    if (priceLabel != null) {
+                        // Remove old mapping and add new one
+                        productPriceLabels.remove(oldProduct);
+                        productPriceLabels.put(modifiedProduct, priceLabel);
+                        
+                        priceLabel.setText(String.format("₱%.2f", modifiedProduct.getPrice()));
+                    }
+                    
+                    break;
+                }
+            }
+        }
+        
+        // Refresh the UI if any displayed products were updated
+        if (needsUIRefresh) {
+            updateProductGridResponsive(filteredProducts, getWidth());
+        }
     }
     
     // Public method to allow barcode scanning to add products directly to cart

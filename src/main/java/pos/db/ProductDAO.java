@@ -4,6 +4,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.util.Map;
 
 public class ProductDAO {
@@ -213,5 +214,32 @@ public class ProductDAO {
         rs.close();
         stmt.close();
         return categoryId;
+    }
+    
+    /**
+     * Get products modified since a specific timestamp
+     * Since the database doesn't have updated_at columns, we'll use a different approach:
+     * Compare current quantities with the last known state to detect changes
+     */
+    public static java.util.List<pos.model.Product> getModifiedProductsSince(Timestamp lastCheck) throws SQLException {
+        // For now, we'll return all products and let the POSView compare quantities
+        // This is less efficient but works with the current database schema
+        return getAllActiveProductsAsList();
+    }
+    
+    /**
+     * Get current database timestamp - with proper connection management
+     */
+    public static Timestamp getCurrentDatabaseTimestamp() throws SQLException {
+        String sql = "SELECT CURRENT_TIMESTAMP";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            
+            if (rs.next()) {
+                return rs.getTimestamp(1);
+            }
+        }
+        throw new SQLException("Could not get database timestamp");
     }
 } 
