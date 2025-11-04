@@ -1,0 +1,4 @@
+--patch-module
+com.mycompany.pos_fx=_
+--add-reads
+com.mycompany.pos_fx=ALL-UNNAMED

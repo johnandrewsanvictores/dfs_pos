@@ -1,0 +1,7 @@
+<?xml version="1.0" ?>
+<jpackage-state version="23.0.2" platform="windows">
+  <app-version>1.0.0</app-version>
+  <main-launcher>Dream-Fashion-POS</main-launcher>
+  <main-class>com.mycompany.pos_fx.App</main-class>
+  <signed>false</signed>
+  <app-store>false</app-store></jpackage-state>
