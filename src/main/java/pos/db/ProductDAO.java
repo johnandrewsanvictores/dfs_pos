@@ -44,7 +44,8 @@ public class ProductDAO {
                      "d.unit_price, " +
                      "d.quantity, " +
                      "NULL AS online_product_id, " +
-                     "NULL AS image_path " +
+                     "NULL AS image_path, " +
+                     "NULL AS color_name " +
                      "FROM inventory i " +
                      "JOIN in_store_product_details d ON i.id = d.inventory_product_id " +
                      "WHERE i.product_status = 'active' AND (i.sale_channel = 'in-store' OR i.sale_channel = 'both') " +
@@ -58,7 +59,8 @@ public class ProductDAO {
                      "opv.unit_price, " +
                      "opv.quantity, " +
                      "opv.online_product_id, " +
-                     "opv.image_path " +
+                     "opv.image_path, " +
+                     "NULL AS color_name " +
                      "FROM inventory i " +
                      "JOIN online_product_details opd ON i.id = opd.product_id " +
                      "JOIN online_product_variant opv ON opd.id = opv.online_product_id " +
@@ -78,7 +80,9 @@ public class ProductDAO {
                 String imagePath = rs.getString("image_path");
                 int quantity = rs.getInt("quantity");
                 int categoryId = rs.getInt("category_id");
-                products.add(new pos.model.Product(sku, price, description, imagePath, quantity, categoryId));
+                String itemName = rs.getString("item_name");
+                String colorName = rs.getString("color_name");
+                products.add(new pos.model.Product(sku, price, description, imagePath, quantity, categoryId, itemName, colorName));
             }
         }
         return products;
@@ -249,7 +253,7 @@ public class ProductDAO {
      */
     public static java.util.List<ProductWithStatus> getChangedProductsSince(Timestamp lastCheck) throws SQLException {
         // Create a hash-based comparison query that's efficient without timestamps
-        String sql = "SELECT " +
+    String sql = "SELECT " +
                      "i.id AS inventory_id, " +
                      "i.description, " +
                      "i.item_name, " +
@@ -259,7 +263,8 @@ public class ProductDAO {
                      "d.unit_price, " +
                      "COALESCE(d.quantity, 0) AS quantity, " +
                      "NULL AS online_product_id, " +
-                     "NULL AS image_path, " +
+             "NULL AS image_path, " +
+             "NULL AS color_name, " +
                      "CONCAT(d.sku, '|', d.unit_price, '|', COALESCE(d.quantity, 0), '|', i.product_status) AS data_hash " +
                      "FROM inventory i " +
                      "JOIN in_store_product_details d ON i.id = d.inventory_product_id " +
@@ -275,7 +280,8 @@ public class ProductDAO {
                      "opv.unit_price, " +
                      "COALESCE(opv.quantity, 0) AS quantity, " +
                      "opv.online_product_id, " +
-                     "opv.image_path, " +
+             "opv.image_path, " +
+             "NULL AS color_name, " +
                      "CONCAT(opv.sku, '|', opv.unit_price, '|', COALESCE(opv.quantity, 0), '|', i.product_status) AS data_hash " +
                      "FROM inventory i " +
                      "JOIN online_product_details opd ON i.id = opd.product_id " +
@@ -297,9 +303,11 @@ public class ProductDAO {
                 int quantity = rs.getInt("quantity");
                 String imagePath = rs.getString("image_path");
                 String dataHash = rs.getString("data_hash");
+                String itemName = rs.getString("item_name");
+                String colorName = rs.getString("color_name");
                 
-                ProductWithStatus product = new ProductWithStatus(sku, price, description, imagePath, 
-                                                 quantity, categoryId, status);
+                ProductWithStatus product = new ProductWithStatus(sku, price, description, imagePath,
+                                                 quantity, categoryId, itemName, colorName, status);
                 product.setDataHash(dataHash); // Store hash for comparison
                 products.add(product);
             }
@@ -316,7 +324,7 @@ public class ProductDAO {
      * FALLBACK: Get all products with status (only used when timestamp queries fail)
      */
     public static java.util.List<ProductWithStatus> getAllProductsWithStatus() throws SQLException {
-        String sql = "SELECT " +
+    String sql = "SELECT " +
                      "i.id AS inventory_id, " +
                      "i.description, " +
                      "i.item_name, " +
@@ -326,7 +334,8 @@ public class ProductDAO {
                      "d.unit_price, " +
                      "COALESCE(d.quantity, 0) AS quantity, " +
                      "NULL AS online_product_id, " +
-                     "NULL AS image_path " +
+             "NULL AS image_path, " +
+             "NULL AS color_name " +
                      "FROM inventory i " +
                      "JOIN in_store_product_details d ON i.id = d.inventory_product_id " +
                      "WHERE (i.sale_channel = 'in-store' OR i.sale_channel = 'both') " +
@@ -341,7 +350,8 @@ public class ProductDAO {
                      "opv.unit_price, " +
                      "COALESCE(opv.quantity, 0) AS quantity, " +
                      "opv.online_product_id, " +
-                     "opv.image_path " +
+             "opv.image_path, " +
+             "NULL AS color_name " +
                      "FROM inventory i " +
                      "JOIN online_product_details opd ON i.id = opd.product_id " +
                      "JOIN online_product_variant opv ON opd.id = opv.online_product_id " +
@@ -361,9 +371,11 @@ public class ProductDAO {
                 String status = rs.getString("product_status");
                 int quantity = rs.getInt("quantity");
                 String imagePath = rs.getString("image_path");
+                String itemName = rs.getString("item_name");
+                String colorName = rs.getString("color_name");
                 
-                products.add(new ProductWithStatus(sku, price, description, imagePath, 
-                                                 quantity, categoryId, status));
+                products.add(new ProductWithStatus(sku, price, description, imagePath,
+                                                 quantity, categoryId, itemName, colorName, status));
             }
         }
         return products;
@@ -376,7 +388,14 @@ public class ProductDAO {
         private final String status;
         private String dataHash; // For efficient change detection
         
-        public ProductWithStatus(String sku, double price, String description, String imagePath, 
+        public ProductWithStatus(String sku, double price, String description, String imagePath,
+                               int quantity, int categoryId, String itemName, String colorName, String status) {
+            super(sku, price, description, imagePath, quantity, categoryId, itemName, colorName);
+            this.status = status;
+        }
+
+        // Backward-compatible constructor (without item/color)
+        public ProductWithStatus(String sku, double price, String description, String imagePath,
                                int quantity, int categoryId, String status) {
             super(sku, price, description, imagePath, quantity, categoryId);
             this.status = status;

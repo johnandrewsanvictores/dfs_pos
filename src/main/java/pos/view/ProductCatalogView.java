@@ -429,11 +429,12 @@ public class ProductCatalogView extends VBox {
         VBox card = createCardContainer(cardWidth);
         ImageView productImage = createProductImage(product, cardWidth);
         Label productName = createProductNameLabel(product);
+        Label productSku = createProductSkuLabel(product);
         Label productPrice = createProductPriceLabel(product);
         Label quantityLabel = createQuantityLabel(product);
         Button addButton = createAddToCartButton(product);
         
-        card.getChildren().addAll(productImage, productName, productPrice, quantityLabel, addButton);
+        card.getChildren().addAll(productImage, productName, productSku, productPrice, quantityLabel, addButton);
         return card;
     }
 
@@ -475,10 +476,29 @@ public class ProductCatalogView extends VBox {
     }
 
     private Label createProductNameLabel(Product product) {
-        Label name = new Label(product.getSku());
+        String itemName = product.getItemName();
+        String colorName = product.getColorName();
+        String display;
+        if (itemName != null && !itemName.isBlank() && colorName != null && !colorName.isBlank()) {
+            display = itemName + " — " + colorName;
+        } else if (itemName != null && !itemName.isBlank()) {
+            display = itemName;
+        } else if (product.getDescription() != null && !product.getDescription().isBlank()) {
+            display = product.getDescription();
+        } else {
+            display = product.getSku();
+        }
+        Label name = new Label(display);
         name.setFont(new Font(14));
         name.setStyle("-fx-font-weight: bold;");
         return name;
+    }
+
+    private Label createProductSkuLabel(Product product) {
+        Label sku = new Label("(" + product.getSku() + ")");
+        sku.setFont(new Font(12));
+        sku.setStyle("-fx-text-fill: #666;");
+        return sku;
     }
 
     private Label createProductPriceLabel(Product product) {

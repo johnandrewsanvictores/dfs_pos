@@ -146,7 +146,11 @@ public class POSView extends BorderPane {
                     String imagePath = p.getImagePath();
                     if (imagePath != null && !imagePath.isEmpty()) {
                         imagePath = DBCredentials.BASE_URL +"/assets/uploads/product_img/" + imagePath;
-                        p = new Product(p.getSku(), p.getPrice(), p.getDescription(), imagePath, p.getQuantity(), p.getCategoryId());
+                        // Preserve itemName and colorName when updating image path
+                        p = new Product(
+                            p.getSku(), p.getPrice(), p.getDescription(), imagePath,
+                            p.getQuantity(), p.getCategoryId(), p.getItemName(), p.getColorName()
+                        );
                     }
                     productList.add(p);
                 }
@@ -725,7 +729,9 @@ public class POSView extends BorderPane {
             productWithStatus.getDescription(),
             imagePath,
             productWithStatus.getQuantity(),
-            productWithStatus.getCategoryId()
+            productWithStatus.getCategoryId(),
+            productWithStatus.getItemName(),
+            productWithStatus.getColorName()
         );
     }
     
